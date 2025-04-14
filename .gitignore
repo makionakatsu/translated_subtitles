@@ -1,0 +1,16 @@
+.env
+.venv
+.vscode
+__pycache__/
+*.pyc
+
+# Log files
+process_log.log
+
+# Generated subtitle files
+*.srt
+*.ass
+*.fcpxml
+
+# Temporary upload directory
+temp_uploads/
