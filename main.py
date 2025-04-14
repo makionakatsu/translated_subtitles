@@ -814,7 +814,7 @@ with tab2:
 
                 # --- 4. Prepare ffmpeg Command ---
                 burn_status_overall.text(f"{pair_prefix}: 字幕焼き込み処理準備中...")
-                logger.info(f"[{pair_prefix}] Starting subtitle burn: Input='{burn_video_path}', Subs='{subtitle_temp_path}', Output='{output_name_burn}'")
+                logger.info(f"[{pair_prefix}] Starting subtitle burn: Input='{burn_video_path}', Subs='{subtitle_temp_path}', Output='{output_path_burn}'") # Corrected variable name here
 
                 subtitle_filter_path = os.path.abspath(subtitle_temp_path)
                 # More robust escaping for Windows paths in ffmpeg filters
