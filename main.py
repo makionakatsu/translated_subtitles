@@ -28,6 +28,21 @@ import logging
 import time
 from urllib.parse import urlparse
 import shutil # Import shutil for copying files in Tab 2
+from pathlib import Path # Add Pathlib import
+
+# --- Helper function to determine output directory ---
+def get_output_dir():
+    """Determines the preferred output directory: Downloads > Desktop > Current."""
+    home = Path.home()
+    downloads_dir = home / "Downloads"
+    desktop_dir = home / "Desktop"
+
+    if downloads_dir.is_dir():
+        return downloads_dir
+    elif desktop_dir.is_dir():
+        return desktop_dir
+    else:
+        return Path(".") # Fallback to current directory
 
 # --- Global Settings ---
 MAX_CONCURRENT_TASKS = 5 # Placeholder, not currently used for sequential processing
@@ -168,14 +183,16 @@ def download_video(video_url, output_base_path, progress_placeholder=None):
         error_handler.handle(f"予期せぬダウンロードエラー: {e}", prefix="Download")
         return None
 
-# Updated signature: added deepl_key, gemini_key
-def process_video(video_input, idx, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key):
+# Updated signature: added output_dir
+def process_video(video_input, idx, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key, output_dir):
     """Processes a single video: download (if URL), convert, transcribe, translate, generate subtitles."""
     video_start_time = time.time()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prefix = f"{idx:02}_{timestamp}"
-    subtitle_path = f"./{prefix}{subtitle_ext}"
-    temp_wav_path = f"./{prefix}_temp.wav"
+    # Use output_dir for subtitle path
+    subtitle_filename = f"{prefix}{subtitle_ext}"
+    subtitle_path = output_dir / subtitle_filename
+    temp_wav_path = f"./{prefix}_temp.wav" # Keep temp files local
     downloaded_video_path = None # Keep track of downloaded file for cleanup
     audio_path_for_whisper = None # Path passed to Whisper
     video_path = None # Define video_path early
@@ -382,12 +399,13 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
         # Ensure the video path used for session state actually exists for Tab 2
         video_path_for_session = video_path if os.path.exists(video_path) else None
         if video_path_for_session:
-             st.session_state['generated_files'].append((video_path_for_session, subtitle_path))
-             logger.info(f"Added to session state: ({video_path_for_session}, {subtitle_path})")
+             # Store the full path to the subtitle file in session state
+             st.session_state['generated_files'].append((video_path_for_session, str(subtitle_path)))
+             logger.info(f"Added to session state: ({video_path_for_session}, {str(subtitle_path)})")
         else:
              logger.warning(f"Could not determine valid video path for session state for input: {video_input}")
 
-        return (prefix, time.time() - video_start_time, subtitle_path) # Return subtitle_path as well
+        return (prefix, time.time() - video_start_time, str(subtitle_path)) # Return subtitle_path as string
 
     except Exception as e:
         error_handler.handle(f"予期せぬエラー: {e}", prefix=prefix)
@@ -403,8 +421,8 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
         # --- DO NOT Clean up downloaded video file here ---
 
 
-# Updated signature: added deepl_key, gemini_key
-def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key):
+# Updated signature: added output_dir
+def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key, output_dir):
     """Handles the overall processing flow for multiple videos."""
     processed_count = 0
     total_time = 0
@@ -418,12 +436,12 @@ def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, 
         # Create a new progress manager for each video? Or reuse? Reusing for now.
         st.markdown(f"---") # Separator for each video's log
         logger.info(f"Starting processing for video {idx+1}/{len(video_inputs)}: {video_input}")
-        # Pass keys and other args down to process_video
+        # Pass output_dir and other args down to process_video
         result = process_video(
             video_input, idx + 1, progress_manager, subtitle_ext, generate_format,
             style_options, whisper_config, output_language,
             auto_font_size_enabled, manual_font_size,
-            deepl_key, gemini_key # Pass keys
+            deepl_key, gemini_key, output_dir # Pass output_dir
         )
         if result:
             results.append(result)
@@ -637,13 +655,17 @@ with tab1:
             elif not gemini_key_from_ui:
                  st.warning("Gemini APIキーが入力されていません。DeepL失敗時のGeminiでの再試行はスキップされます。")
 
+            # Determine the output directory
+            output_directory = get_output_dir()
+            st.info(f"出力先フォルダ: {output_directory}") # Inform user
 
-            # Call main_process with the new arguments including API keys
+            # Call main_process with the new arguments including API keys and output_dir
             main_process(
                 video_inputs, progress_manager, subtitle_ext, generate_format,
                 style_options, whisper_config, output_language,
                 auto_font_size_enabled, manual_font_size_value,
-                deepl_key_from_ui, gemini_key_from_ui # Pass keys from UI
+                deepl_key_from_ui, gemini_key_from_ui, # Pass keys from UI
+                output_directory # Pass determined output directory
             )
         else:
             st.warning("処理する動画が指定されていません。")
@@ -738,7 +760,12 @@ with tab2:
             subtitle_temp_path = None
             downloaded_burn_video = None
             burn_video_path = video_input_path
-            output_name_burn = output_filenames.get(video_input_path, f"output_{i+1}_burned.mp4")
+            # Determine output directory for burned video
+            output_directory_burn = get_output_dir()
+            base_output_name = output_filenames.get(video_input_path, f"output_{i+1}_burned.mp4")
+            output_path_burn = output_directory_burn / base_output_name
+            logger.info(f"[{pair_prefix}] Determined burn output path: {output_path_burn}")
+
 
             try:
                 # --- 1. Prepare Subtitle File ---
@@ -822,7 +849,7 @@ with tab2:
                 # --- 5. Run ffmpeg Process ---
                 burn_status_overall.text(f"{pair_prefix}: 字幕焼き込み実行中...")
                 process = ffmpeg.input(burn_video_path).output(
-                    output_name_burn,
+                    str(output_path_burn), # Use the determined output path
                     vf=final_vf_filter,
                     vcodec="libx264", preset="medium", crf=23,
                     acodec="aac", audio_bitrate="192k", strict="-2"
@@ -831,14 +858,14 @@ with tab2:
                 stdout, stderr = process.communicate() # Wait for completion
 
                 if process.returncode == 0:
-                    st.success(f"[{pair_prefix}] 字幕焼き込み完了: {output_name_burn}")
-                    logger.info(f"[{pair_prefix}] Subtitle burn successful for {output_name_burn}")
+                    st.success(f"[{pair_prefix}] 字幕焼き込み完了: {output_path_burn}")
+                    logger.info(f"[{pair_prefix}] Subtitle burn successful for {output_path_burn}")
                     processed_success_count += 1
                 else:
                     error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "不明なFFmpegエラー"
                     st.error(f"[{pair_prefix}] 字幕焼き込み中にエラーが発生しました。")
                     st.text_area(f"FFmpeg エラー詳細 ({os.path.basename(video_input_path)}):", error_msg, height=150)
-                    logger.error(f"[{pair_prefix}] FFmpeg subtitle burn failed for {output_name_burn}. Stderr:\n{error_msg}")
+                    logger.error(f"[{pair_prefix}] FFmpeg subtitle burn failed for {output_path_burn}. Stderr:\n{error_msg}")
 
             except Error as e:
                 error_msg = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "ffmpeg-pythonエラー"
