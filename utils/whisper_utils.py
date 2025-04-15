@@ -38,13 +38,19 @@ def transcribe_with_faster_whisper(audio_file_path, model_size="medium", device=
 
         logger.info(f"Starting transcription for {audio_file_path} with beam_size={beam_size}")
         start_time = time.time()
+
+        logger.info("Attempting to call model.transcribe...") # <<< 追加
         # Add VAD filter? Example: segments, info = model.transcribe(audio, beam_size=5, vad_filter=True)
         segments_generator, info = model.transcribe(audio_file_path, beam_size=beam_size)
-        
+        logger.info("model.transcribe call completed. Info received.") # <<< 追加
+        logger.debug(f"Transcription info: Language={info.language}, Prob={info.language_probability:.2f}, Duration={info.duration}s") # <<< 追加 (Debugレベル)
+
+        logger.info("Attempting to convert segments generator to list...") # <<< 追加
         # Consume the generator to get the list of segments
         # This is where potential errors during transcription might surface
-        segments = list(segments_generator) 
-        
+        segments = list(segments_generator)
+        logger.info("Successfully converted segments generator to list.") # <<< 追加
+
         elapsed = time.time() - start_time
         logger.info(f"Transcription finished in {elapsed:.2f} seconds. Language: {info.language} (Prob: {info.language_probability:.2f})")
         return segments, info
