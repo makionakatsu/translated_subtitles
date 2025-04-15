@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 import shutil # Import shutil for copying files in Tab 2
 from pathlib import Path # Add Pathlib import
 import os # Import os module
+import tempfile # Import tempfile module
 
 # --- Helper function to determine output directory (Commented out - Tab 1 uses memory, Tab 2 needs review) ---
 # def get_output_dir():
@@ -814,12 +815,19 @@ with tab2:
             subtitle_temp_path = None
             downloaded_burn_video = None
             burn_video_path = video_input_path
-            # Determine output directory for burned video using the unified function
-            output_directory_burn = get_output_dir() # Use the updated function
+            # Generate a temporary file path for the output video
+            # Keep the original base name for the suggested download filename
             base_output_name = output_filenames.get(video_input_path, f"output_{i+1}_burned.mp4")
-            output_path_burn = output_directory_burn / base_output_name
-            logger.info(f"[{pair_prefix}] Determined burn output path: {output_path_burn}")
-
+            try:
+                # Create a temporary file that persists until closed/deleted
+                # Suffix helps identify the file type if needed, delete=False keeps it after close
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video_file:
+                    output_path_burn_temp = temp_video_file.name # Get the temporary path
+                logger.info(f"[{pair_prefix}] Determined temporary burn output path: {output_path_burn_temp}")
+            except Exception as temp_err:
+                st.error(f"[{pair_prefix}] 一時ファイルの作成に失敗しました: {temp_err}")
+                logger.error(f"[{pair_prefix}] Failed to create temporary output file: {temp_err}")
+                continue # Skip this pair
 
             try:
                 # --- 1. Prepare Subtitle File ---
@@ -903,7 +911,7 @@ with tab2:
                 # --- 5. Run ffmpeg Process ---
                 burn_status_overall.text(f"{pair_prefix}: 字幕焼き込み実行中...")
                 process = ffmpeg.input(burn_video_path).output(
-                    str(output_path_burn), # Use the determined output path
+                    output_path_burn_temp, # Use the temporary output path
                     vf=final_vf_filter,
                     vcodec="libx264", preset="medium", crf=23,
                     acodec="aac", audio_bitrate="192k", strict="-2"
@@ -912,10 +920,11 @@ with tab2:
                 stdout, stderr = process.communicate() # Wait for completion
 
                 if process.returncode == 0:
-                    st.success(f"[{pair_prefix}] 字幕焼き込み完了: {output_path_burn}")
-                    logger.info(f"[{pair_prefix}] Subtitle burn successful for {output_path_burn}")
+                    st.success(f"[{pair_prefix}] 字幕焼き込み完了 (一時ファイル: {os.path.basename(output_path_burn_temp)})")
+                    logger.info(f"[{pair_prefix}] Subtitle burn successful to temporary file: {output_path_burn_temp}")
                     processed_success_count += 1
-                    successful_burns.append(str(output_path_burn)) # Add successful path to the list
+                    # Store the temporary path and the original intended filename for the download button
+                    successful_burns.append((output_path_burn_temp, base_output_name))
                 else:
                     error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "不明なFFmpegエラー"
                     st.error(f"[{pair_prefix}] 字幕焼き込み中にエラーが発生しました。")
@@ -954,39 +963,8 @@ with tab2:
              st.balloons()
 
         # --- Display Download Buttons for Burned Videos ---
-        # Keep track of successful burns to display buttons later
-        successful_burns = [] # Initialize list to store successful paths
-        # (Need to modify the loop above to append successful paths to this list)
-        # Let's assume the loop above was modified like this:
-        # if process.returncode == 0:
-        #     ...
-        #     successful_burns.append(str(output_path_burn)) # Store successful path
-        #     ...
-
-        # Check if the successful_burns list was populated (requires modifying the loop logic slightly)
-        # For now, let's add the UI part assuming successful_burns is populated correctly.
-        # We'll need another replace to add the append logic in the loop.
-
-        # Placeholder: Assume successful_burns list is populated correctly after the loop
-        # This section will be added after the loop finishes.
-        # Note: This requires modifying the loop above to populate `successful_burns`.
-        # This diff only adds the UI display part.
-
-        # --- Display Download Buttons for Burned Videos ---
-        # (This section should be placed *after* the main burning loop finishes)
-        # We need to ensure `successful_burns` list is populated within the loop first.
-        # Let's add the UI code assuming it is.
-
-        # Placeholder for where successful_burns would be populated
-        # Example modification inside the loop (needs a separate replace):
-        # if process.returncode == 0:
-        #    st.success(...)
-        #    logger.info(...)
-        #    processed_success_count += 1
-        #    successful_burns.append(str(output_path_burn)) # Add this line
-
-        # Display download buttons if any burns were successful
-        if successful_burns: # Check if the list has items
+        # successful_burns now contains tuples of (temp_file_path, original_filename)
+        if successful_burns:
             st.markdown("---")
             st.subheader("🔥 焼き込み済み動画ファイル")
             st.caption("動画ファイルはサイズが大きい場合があります。ダウンロードに時間がかかることがあります。")
@@ -994,28 +972,35 @@ with tab2:
             col_dl_burn1, col_dl_burn2 = st.columns(2)
             current_col_burn = col_dl_burn1
 
-            for i, burned_video_path_str in enumerate(successful_burns):
-                burned_video_path = Path(burned_video_path_str)
-                if burned_video_path.is_file():
+            # Keep track of temp files to potentially clean up later if needed
+            # temp_files_to_clean = [] # Optional: For later cleanup logic
+
+            for i, (temp_path_str, original_filename) in enumerate(successful_burns):
+                temp_video_path = Path(temp_path_str)
+                if temp_video_path.is_file():
                     try:
-                        # Read video file as bytes
-                        with open(burned_video_path, "rb") as fp:
+                        # Read the temporary video file as bytes
+                        with open(temp_video_path, "rb") as fp:
                             btn_data_video = fp.read()
 
-                        # Display download button
+                        # Display download button using the original filename
                         with current_col_burn:
                             st.download_button(
-                                label=f"ダウンロード: {burned_video_path.name}",
+                                label=f"ダウンロード: {original_filename}",
                                 data=btn_data_video,
-                                file_name=burned_video_path.name,
+                                file_name=original_filename, # Use the intended filename
                                 mime='video/mp4', # Assuming MP4 output
-                                key=f"download_burn_{i}_{burned_video_path.name}" # Unique key
+                                key=f"download_burn_{i}_{original_filename}" # Unique key
                             )
-                            # Alternate columns
-                            current_col_burn = col_dl_burn2 if current_col_burn == col_dl_burn1 else col_dl_burn1
+                            # temp_files_to_clean.append(temp_video_path) # Optional: Track for cleanup
+                        # Alternate columns
+                        current_col_burn = col_dl_burn2 if current_col_burn == col_dl_burn1 else col_dl_burn1
                     except Exception as read_err:
-                        st.error(f"ファイル読み込みエラー ({burned_video_path.name}): {read_err}")
-                        logger.error(f"Error reading burned video file for download ({burned_video_path.name}): {read_err}")
+                        st.error(f"一時ファイル読み込みエラー ({original_filename}): {read_err}")
+                        logger.error(f"Error reading temporary burned video file for download ({temp_video_path}): {read_err}")
                 else:
-                    st.warning(f"生成されたはずの動画ファイルが見つかりません: {burned_video_path.name}")
-                    logger.warning(f"Burned video file not found for download: {burned_video_path.name}")
+                    st.warning(f"一時ファイルが見つかりません: {original_filename} (Path: {temp_video_path})")
+                    logger.warning(f"Temporary burned video file not found for download: {temp_video_path}")
+
+            # Optional: Add logic here or elsewhere to clean up files in temp_files_to_clean
+            # Be careful with cleanup timing due to Streamlit reruns
