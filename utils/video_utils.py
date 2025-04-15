@@ -27,7 +27,7 @@ def convert_to_wav(input_path, output_path):
             os.makedirs(output_dir, exist_ok=True)
 
         command = [
-            "/opt/homebrew/bin/ffmpeg", "-i", input_path,
+            "ffmpeg", "-i", input_path,
             "-vn",  # Disable video recording
             "-acodec", "pcm_s16le",  # Audio codec: PCM 16-bit little-endian
             "-ar", "16000",          # Audio sample rate: 16kHz
