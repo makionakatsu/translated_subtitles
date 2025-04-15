@@ -31,29 +31,29 @@ import shutil # Import shutil for copying files in Tab 2
 from pathlib import Path # Add Pathlib import
 import os # Import os module
 
-# --- Helper function to determine output directory ---
-def get_output_dir():
-    """Determines the output directory as './generated_files' and creates it if needed."""
-    output_subdir = Path("./generated_files")
-    try:
-        # exist_ok=True でフォルダが既に存在してもエラーにならない
-        os.makedirs(output_subdir, exist_ok=True)
-        # Use logger if available, otherwise print
-        if 'logger' in globals():
-             logger.info(f"Ensured output directory exists: {output_subdir.resolve()}")
-        else:
-             print(f"Ensured output directory exists: {output_subdir.resolve()}")
-        return output_subdir
-    except OSError as e:
-        # Use logger if available, otherwise print error
-        if 'logger' in globals():
-            logger.error(f"Failed to create output directory '{output_subdir}': {e}")
-            logger.warning("Falling back to current directory for output.")
-        else:
-            print(f"ERROR: Failed to create output directory '{output_subdir}': {e}")
-            print("WARNING: Falling back to current directory for output.")
-        # Fallback to current directory if creation fails
-        return Path(".")
+# --- Helper function to determine output directory (Commented out - Tab 1 uses memory, Tab 2 needs review) ---
+# def get_output_dir():
+#     """Determines the output directory as './generated_files' and creates it if needed."""
+#     output_subdir = Path("./generated_files")
+#     try:
+#         # exist_ok=True でフォルダが既に存在してもエラーにならない
+#         os.makedirs(output_subdir, exist_ok=True)
+#         # Use logger if available, otherwise print
+#         if 'logger' in globals():
+#              logger.info(f"Ensured output directory exists: {output_subdir.resolve()}")
+#         else:
+#              print(f"Ensured output directory exists: {output_subdir.resolve()}")
+#         return output_subdir
+#     except OSError as e:
+#         # Use logger if available, otherwise print error
+#         if 'logger' in globals():
+#             logger.error(f"Failed to create output directory '{output_subdir}': {e}")
+#             logger.warning("Falling back to current directory for output.")
+#         else:
+#             print(f"ERROR: Failed to create output directory '{output_subdir}': {e}")
+#             print("WARNING: Falling back to current directory for output.")
+#         # Fallback to current directory if creation fails
+#         return Path(".")
 
 # --- Global Settings ---
 MAX_CONCURRENT_TASKS = 5 # Placeholder, not currently used for sequential processing
@@ -194,15 +194,14 @@ def download_video(video_url, output_base_path, progress_placeholder=None):
         error_handler.handle(f"予期せぬダウンロードエラー: {e}", prefix="Download")
         return None
 
-# Updated signature: added output_dir
-def process_video(video_input, idx, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key, output_dir):
-    """Processes a single video: download (if URL), convert, transcribe, translate, generate subtitles."""
+# Updated signature: removed output_dir for Tab 1
+def process_video(video_input, idx, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key):
+    """Processes a single video: download (if URL), convert, transcribe, translate, generate subtitle content in memory."""
     video_start_time = time.time()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     prefix = f"{idx:02}_{timestamp}"
-    # Use output_dir for subtitle path
-    subtitle_filename = f"{prefix}{subtitle_ext}"
-    subtitle_path = output_dir / subtitle_filename
+    # Generate filename, but content will be in memory
+    output_filename = f"{prefix}{subtitle_ext}"
     temp_wav_path = f"./{prefix}_temp.wav" # Keep temp files local
     downloaded_video_path = None # Keep track of downloaded file for cleanup
     audio_path_for_whisper = None # Path passed to Whisper
@@ -354,69 +353,66 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
             st.session_state['last_tab1_font_size'] = final_font_size
             logger.info(f"[{prefix}] Stored final font size {final_font_size} in session state.")
 
-            # Open the file and write content based on format inside the 'with' block
-            with open(subtitle_path, "w", encoding="utf-8") as f:
-                # Write content based on format inside the 'with' block
-                if generate_format == "SRTファイル（テキストのみ）":
-                    # Pass width and FINAL font_size to SRT generation
-                    srt_content = generate_srt_content(segments, width=width, font_size=final_font_size)
-                    f.write(srt_content)
-                elif generate_format == "ASSファイル（装飾あり）":
-                    # Width and height are already determined above
-                    styles_data = load_styles()
-                    chosen_style_name = style_options.get("style_choice", "Default")
-                    show_bg = style_options.get("show_bg", False)
+            # Generate content in memory and encode to bytes
+            generated_content_bytes = None
+            if generate_format == "SRTファイル（テキストのみ）":
+                srt_content = generate_srt_content(segments, width=width, font_size=final_font_size)
+                generated_content_bytes = srt_content.encode('utf-8')
+            elif generate_format == "ASSファイル（装飾あり）":
+                styles_data = load_styles()
+                chosen_style_name = style_options.get("style_choice", "Default")
+                show_bg = style_options.get("show_bg", False)
+                if chosen_style_name not in styles_data:
+                    st.warning(f"[{prefix}] スタイル '{chosen_style_name}' が styles.json に見つかりません。デフォルト設定を使用します。")
+                    logger.warning(f"[{prefix}] Style '{chosen_style_name}' not found in styles.json. Using default.")
+                    if 'Default' not in styles_data:
+                         styles_data['Default'] = {
+                             "Fontname": "Arial", "Fontsize": "20", "PrimaryColour": "&H00FFFFFF",
+                             "SecondaryColour": "&H000000FF", "OutlineColour": "&H00000000", "BackColour": "&H80000000",
+                             "Bold": "0", "Italic": "0", "Underline": "0", "StrikeOut": "0",
+                             "ScaleX": "100", "ScaleY": "100", "Spacing": "0", "Angle": "0",
+                             "BorderStyle": "1", "Outline": "1", "Shadow": "0",
+                             "Alignment": "2", "MarginL": "10", "MarginR": "10", "MarginV": "10", "Encoding": "1"
+                         }
+                    chosen_style_name = "Default"
+                header = generate_ass_header(width, height, styles_data, chosen_style_name, show_bg, font_size=final_font_size)
+                dialogue_lines = generate_ass_dialogue(segments, chosen_style_name, width=width, font_size=final_font_size)
+                ass_content = header + dialogue_lines
+                generated_content_bytes = ass_content.encode('utf-8')
+            elif generate_format == "FCPXMLファイル（Final Cut Pro用）":
+                 fcpxml_content = generate_fcpxml(segments, video_path=video_path, font_size=final_font_size)
+                 if fcpxml_content:
+                     generated_content_bytes = fcpxml_content.encode('utf-8')
+                 else:
+                     raise ValueError("FCPXMLコンテンツの生成に失敗しました。")
 
-                    if chosen_style_name not in styles_data:
-                        st.warning(f"[{prefix}] スタイル '{chosen_style_name}' が styles.json に見つかりません。デフォルト設定を使用します。")
-                        logger.warning(f"[{prefix}] Style '{chosen_style_name}' not found in styles.json. Using default.")
-                        if 'Default' not in styles_data:
-                             styles_data['Default'] = {
-                                 "Fontname": "Arial", "Fontsize": "20", "PrimaryColour": "&H00FFFFFF",
-                                 "SecondaryColour": "&H000000FF", "OutlineColour": "&H00000000", "BackColour": "&H80000000",
-                                 "Bold": "0", "Italic": "0", "Underline": "0", "StrikeOut": "0",
-                                 "ScaleX": "100", "ScaleY": "100", "Spacing": "0", "Angle": "0",
-                                 "BorderStyle": "1", "Outline": "1", "Shadow": "0",
-                                 "Alignment": "2", "MarginL": "10", "MarginR": "10", "MarginV": "10", "Encoding": "1"
-                             }
-                        chosen_style_name = "Default"
+            if generated_content_bytes is None:
+                 raise ValueError("字幕コンテンツの生成に失敗しました (bytes is None)。")
 
-                    # Pass FINAL font_size to generate_ass_header
-                    header = generate_ass_header(width, height, styles_data, chosen_style_name, show_bg, font_size=final_font_size)
-                    f.write(header)
-                    # Pass width and FINAL font_size to ASS dialogue generation
-                    dialogue_lines = generate_ass_dialogue(segments, chosen_style_name, width=width, font_size=final_font_size)
-                    f.write(dialogue_lines)
-
-                elif generate_format == "FCPXMLファイル（Final Cut Pro用）":
-                     # Pass FINAL font_size to generate_fcpxml
-                     fcpxml_content = generate_fcpxml(segments, video_path=video_path, font_size=final_font_size)
-                     if fcpxml_content:
-                         f.write(fcpxml_content)
-                     else:
-                         raise ValueError("FCPXMLコンテンツの生成に失敗しました。")
-
-            # This success message is now outside the 'with' block, ensuring file is closed before reporting success.
-            st.success(f"[{prefix}] {os.path.basename(subtitle_path)} 出力完了")
-            logger.info(f"[{prefix}] Successfully generated subtitle file: {subtitle_path}")
-            progress_manager.update(95, f"[{prefix}] {os.path.basename(subtitle_path)} 保存完了")
+            st.success(f"[{prefix}] {output_filename} 生成完了（メモリ内）")
+            logger.info(f"[{prefix}] Successfully generated content for {output_filename} in memory")
+            progress_manager.update(95, f"[{prefix}] {output_filename} 生成完了")
 
         except Exception as sub_err:
-            error_handler.handle(f"字幕ファイル書き込みエラー: {sub_err}", prefix=prefix)
+            error_handler.handle(f"字幕コンテンツ生成エラー: {sub_err}", prefix=prefix)
             return None # Stop processing this video
 
-        # --- Store generated file info in session state ---
+        # --- Store original video path info in session state (still needed for Tab 2) ---
+        # We no longer store the subtitle path, as it's not written to disk
         original_source = video_input if os.path.exists(video_input) else downloaded_video_path if downloaded_video_path else video_input
-        # Ensure the video path used for session state actually exists for Tab 2
         video_path_for_session = video_path if os.path.exists(video_path) else None
         if video_path_for_session:
-             # Store the full path to the subtitle file in session state
-             st.session_state['generated_files'].append((video_path_for_session, str(subtitle_path)))
-             logger.info(f"Added to session state: ({video_path_for_session}, {str(subtitle_path)})")
+             # Store only the video path and maybe the intended subtitle filename for reference in Tab 2?
+             # For now, let's just keep the original logic but without the subtitle path.
+             # This might need adjustment depending on how Tab 2 selects inputs.
+             # Let's clear generated_files for now to avoid confusion, as it expected paths.
+             # st.session_state['generated_files'].append((video_path_for_session, output_filename)) # Store filename instead?
+             pass # Decide later how Tab 2 should get info if needed without subtitle file path
         else:
              logger.warning(f"Could not determine valid video path for session state for input: {video_input}")
 
-        return (prefix, time.time() - video_start_time, str(subtitle_path)) # Return subtitle_path as string
+        # Return filename and content bytes
+        return (prefix, time.time() - video_start_time, output_filename, generated_content_bytes)
 
     except Exception as e:
         error_handler.handle(f"予期せぬエラー: {e}", prefix=prefix)
@@ -432,12 +428,12 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
         # --- DO NOT Clean up downloaded video file here ---
 
 
-# Updated signature: added output_dir
-def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key, output_dir):
+# Updated signature: removed output_dir
+def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, style_options, whisper_config, output_language, auto_font_size_enabled, manual_font_size, deepl_key, gemini_key):
     """Handles the overall processing flow for multiple videos."""
     processed_count = 0
     total_time = 0
-    results = [] # Store results (prefix, time, subtitle_path) for each video
+    results = [] # Store results (prefix, time, filename, content_bytes) for each video
 
     st.markdown("---") # Separator before processing starts
     st.write(f"処理対象: {len(video_inputs)} 件")
@@ -447,14 +443,15 @@ def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, 
         # Create a new progress manager for each video? Or reuse? Reusing for now.
         st.markdown(f"---") # Separator for each video's log
         logger.info(f"Starting processing for video {idx+1}/{len(video_inputs)}: {video_input}")
-        # Pass output_dir and other args down to process_video
+        # Pass args down to process_video (no output_dir)
         result = process_video(
             video_input, idx + 1, progress_manager, subtitle_ext, generate_format,
             style_options, whisper_config, output_language,
             auto_font_size_enabled, manual_font_size,
-            deepl_key, gemini_key, output_dir # Pass output_dir
+            deepl_key, gemini_key
         )
         if result:
+            # result is now (prefix, time, filename, content_bytes)
             results.append(result)
             processed_count += 1
             total_time += result[1] # Add elapsed time
@@ -471,10 +468,13 @@ def main_process(video_inputs, progress_manager, subtitle_ext, generate_format, 
         st.write(f"{len(video_inputs)} 件中 {processed_count} 件の処理が正常に完了しました。")
         st.write(f"合計処理時間: {total_time:.2f} 秒")
         st.markdown("#### 各動画の処理詳細:")
-        for name, t, sub_path in results: # Unpack subtitle_path as well
-            st.write(f"- **{name}**: {t:.2f} 秒 (字幕: {os.path.basename(sub_path)})")
+        # results contains (prefix, time, filename, content_bytes)
+        for name, t, filename, _ in results: # Unpack filename, ignore bytes for summary
+            st.write(f"- **{name}**: {t:.2f} 秒 (ファイル名: {filename})")
     else:
         st.warning("処理が正常に完了した動画はありませんでした。")
+    logger.info(f"Main process finished. Returning {len(results)} results.") # Log before returning
+    return results # Return the populated list
 
 
 # --- Main Streamlit App ---
@@ -680,48 +680,45 @@ with tab1:
                 output_directory # Pass determined output directory
             )
             # --- Display Download Buttons for Generated Subtitles (Moved inside if video_inputs) ---
-            if results: # Check if main_process returned any results
+            if results: # Check if main_process returned any results (list of tuples: prefix, time, filename, content_bytes)
                 st.markdown("---")
-                st.subheader("✅ 生成された字幕ファイル")
+                st.subheader("✅ 生成されたファイル")
                 # Use columns for better layout? Maybe 2 columns.
                 col_dl1, col_dl2 = st.columns(2)
                 current_col = col_dl1 # Start with the first column
 
-                for i, (_, _, subtitle_path_str) in enumerate(results):
-                    subtitle_path = Path(subtitle_path_str) # Convert string back to Path
-                    if subtitle_path.is_file():
+                for i, (_, _, filename, content_bytes) in enumerate(results):
+                    if content_bytes:
                         try:
-                            # Read file content as bytes for download button
-                            with open(subtitle_path, "rb") as fp:
-                                btn_data = fp.read()
-
-                            # Determine mime type based on extension
+                            # Determine mime type based on filename extension
                             mime_type = 'text/plain' # Default
-                            if subtitle_path.suffix.lower() == '.srt':
+                            if filename.lower().endswith('.srt'):
                                 mime_type = 'text/plain' # or 'application/x-subrip'
-                            elif subtitle_path.suffix.lower() == '.ass':
+                            elif filename.lower().endswith('.ass'):
                                 mime_type = 'text/plain' # ASS is also plain text
-                            elif subtitle_path.suffix.lower() == '.fcpxml':
+                            elif filename.lower().endswith('.fcpxml'):
                                 mime_type = 'application/xml'
 
                             # Display download button in the current column
                             with current_col:
                                 st.download_button(
-                                    label=f"ダウンロード: {subtitle_path.name}",
-                                    data=btn_data,
-                                    file_name=subtitle_path.name, # Suggest original filename
+                                    label=f"ダウンロード: {filename}",
+                                    data=content_bytes, # Pass bytes directly
+                                    file_name=filename, # Suggest original filename
                                     mime=mime_type,
-                                    key=f"download_{i}_{subtitle_path.name}" # Unique key
+                                    key=f"download_{i}_{filename}" # Unique key using filename
                                 )
                                 # Alternate columns
                                 current_col = col_dl2 if current_col == col_dl1 else col_dl1
 
-                        except Exception as read_err:
-                             st.error(f"ファイル読み込みエラー ({subtitle_path.name}): {read_err}")
-                             logger.error(f"Error reading file for download button ({subtitle_path.name}): {read_err}")
+                        except Exception as btn_err:
+                             # Error during button creation itself (less likely)
+                             st.error(f"ダウンロードボタン作成エラー ({filename}): {btn_err}")
+                             logger.error(f"Error creating download button for {filename}: {btn_err}")
                     else:
-                        st.warning(f"生成されたはずのファイルが見つかりません: {subtitle_path.name}")
-                        logger.warning(f"File not found for download button: {subtitle_path.name}")
+                        # This case should ideally not happen if process_video returns correctly
+                        st.warning(f"ファイルコンテンツが見つかりません（メモリ内）: {filename}")
+                        logger.warning(f"Content bytes not found for {filename} in results list.")
         # This else block corresponds to 'if video_inputs:'
         else:
             st.warning("処理する動画が指定されていません。")
