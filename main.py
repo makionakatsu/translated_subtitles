@@ -29,20 +29,31 @@ import time
 from urllib.parse import urlparse
 import shutil # Import shutil for copying files in Tab 2
 from pathlib import Path # Add Pathlib import
+import os # Import os module
 
 # --- Helper function to determine output directory ---
 def get_output_dir():
-    """Determines the preferred output directory: Downloads > Desktop > Current."""
-    home = Path.home()
-    downloads_dir = home / "Downloads"
-    desktop_dir = home / "Desktop"
-
-    if downloads_dir.is_dir():
-        return downloads_dir
-    elif desktop_dir.is_dir():
-        return desktop_dir
-    else:
-        return Path(".") # Fallback to current directory
+    """Determines the output directory as './generated_files' and creates it if needed."""
+    output_subdir = Path("./generated_files")
+    try:
+        # exist_ok=True でフォルダが既に存在してもエラーにならない
+        os.makedirs(output_subdir, exist_ok=True)
+        # Use logger if available, otherwise print
+        if 'logger' in globals():
+             logger.info(f"Ensured output directory exists: {output_subdir.resolve()}")
+        else:
+             print(f"Ensured output directory exists: {output_subdir.resolve()}")
+        return output_subdir
+    except OSError as e:
+        # Use logger if available, otherwise print error
+        if 'logger' in globals():
+            logger.error(f"Failed to create output directory '{output_subdir}': {e}")
+            logger.warning("Falling back to current directory for output.")
+        else:
+            print(f"ERROR: Failed to create output directory '{output_subdir}': {e}")
+            print("WARNING: Falling back to current directory for output.")
+        # Fallback to current directory if creation fails
+        return Path(".")
 
 # --- Global Settings ---
 MAX_CONCURRENT_TASKS = 5 # Placeholder, not currently used for sequential processing
@@ -491,6 +502,7 @@ tab1, tab2 = st.tabs(["🎤 字幕ファイル作成", "🔥 字幕焼き込み"
 
 # --- Tab 1: Subtitle Generation ---
 with tab1:
+    results = [] # Initialize results list here
     st.header("1. 入力ファイルの指定")
     input_method = st.radio("入力方法:", ["パス・URLを直接入力", "ローカルファイルをアップロード"], key="tab1_input_method")
     video_inputs = []
@@ -667,6 +679,50 @@ with tab1:
                 deepl_key_from_ui, gemini_key_from_ui, # Pass keys from UI
                 output_directory # Pass determined output directory
             )
+            # --- Display Download Buttons for Generated Subtitles (Moved inside if video_inputs) ---
+            if results: # Check if main_process returned any results
+                st.markdown("---")
+                st.subheader("✅ 生成された字幕ファイル")
+                # Use columns for better layout? Maybe 2 columns.
+                col_dl1, col_dl2 = st.columns(2)
+                current_col = col_dl1 # Start with the first column
+
+                for i, (_, _, subtitle_path_str) in enumerate(results):
+                    subtitle_path = Path(subtitle_path_str) # Convert string back to Path
+                    if subtitle_path.is_file():
+                        try:
+                            # Read file content as bytes for download button
+                            with open(subtitle_path, "rb") as fp:
+                                btn_data = fp.read()
+
+                            # Determine mime type based on extension
+                            mime_type = 'text/plain' # Default
+                            if subtitle_path.suffix.lower() == '.srt':
+                                mime_type = 'text/plain' # or 'application/x-subrip'
+                            elif subtitle_path.suffix.lower() == '.ass':
+                                mime_type = 'text/plain' # ASS is also plain text
+                            elif subtitle_path.suffix.lower() == '.fcpxml':
+                                mime_type = 'application/xml'
+
+                            # Display download button in the current column
+                            with current_col:
+                                st.download_button(
+                                    label=f"ダウンロード: {subtitle_path.name}",
+                                    data=btn_data,
+                                    file_name=subtitle_path.name, # Suggest original filename
+                                    mime=mime_type,
+                                    key=f"download_{i}_{subtitle_path.name}" # Unique key
+                                )
+                                # Alternate columns
+                                current_col = col_dl2 if current_col == col_dl1 else col_dl1
+
+                        except Exception as read_err:
+                             st.error(f"ファイル読み込みエラー ({subtitle_path.name}): {read_err}")
+                             logger.error(f"Error reading file for download button ({subtitle_path.name}): {read_err}")
+                    else:
+                        st.warning(f"生成されたはずのファイルが見つかりません: {subtitle_path.name}")
+                        logger.warning(f"File not found for download button: {subtitle_path.name}")
+        # This else block corresponds to 'if video_inputs:'
         else:
             st.warning("処理する動画が指定されていません。")
 
@@ -751,6 +807,7 @@ with tab2:
         burn_status_overall = st.empty()
         total_pairs = len(video_subtitle_pairs)
         processed_success_count = 0
+        successful_burns = [] # Initialize list here
 
         for i, (video_input_path, subtitle_info) in enumerate(video_subtitle_pairs):
 
@@ -760,8 +817,8 @@ with tab2:
             subtitle_temp_path = None
             downloaded_burn_video = None
             burn_video_path = video_input_path
-            # Determine output directory for burned video
-            output_directory_burn = get_output_dir()
+            # Determine output directory for burned video using the unified function
+            output_directory_burn = get_output_dir() # Use the updated function
             base_output_name = output_filenames.get(video_input_path, f"output_{i+1}_burned.mp4")
             output_path_burn = output_directory_burn / base_output_name
             logger.info(f"[{pair_prefix}] Determined burn output path: {output_path_burn}")
@@ -861,6 +918,7 @@ with tab2:
                     st.success(f"[{pair_prefix}] 字幕焼き込み完了: {output_path_burn}")
                     logger.info(f"[{pair_prefix}] Subtitle burn successful for {output_path_burn}")
                     processed_success_count += 1
+                    successful_burns.append(str(output_path_burn)) # Add successful path to the list
                 else:
                     error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "不明なFFmpegエラー"
                     st.error(f"[{pair_prefix}] 字幕焼き込み中にエラーが発生しました。")
@@ -897,3 +955,70 @@ with tab2:
         burn_status_overall.text(f"全 {total_pairs} ペアの処理完了。{processed_success_count} 件成功。")
         if processed_success_count == total_pairs and total_pairs > 0:
              st.balloons()
+
+        # --- Display Download Buttons for Burned Videos ---
+        # Keep track of successful burns to display buttons later
+        successful_burns = [] # Initialize list to store successful paths
+        # (Need to modify the loop above to append successful paths to this list)
+        # Let's assume the loop above was modified like this:
+        # if process.returncode == 0:
+        #     ...
+        #     successful_burns.append(str(output_path_burn)) # Store successful path
+        #     ...
+
+        # Check if the successful_burns list was populated (requires modifying the loop logic slightly)
+        # For now, let's add the UI part assuming successful_burns is populated correctly.
+        # We'll need another replace to add the append logic in the loop.
+
+        # Placeholder: Assume successful_burns list is populated correctly after the loop
+        # This section will be added after the loop finishes.
+        # Note: This requires modifying the loop above to populate `successful_burns`.
+        # This diff only adds the UI display part.
+
+        # --- Display Download Buttons for Burned Videos ---
+        # (This section should be placed *after* the main burning loop finishes)
+        # We need to ensure `successful_burns` list is populated within the loop first.
+        # Let's add the UI code assuming it is.
+
+        # Placeholder for where successful_burns would be populated
+        # Example modification inside the loop (needs a separate replace):
+        # if process.returncode == 0:
+        #    st.success(...)
+        #    logger.info(...)
+        #    processed_success_count += 1
+        #    successful_burns.append(str(output_path_burn)) # Add this line
+
+        # Display download buttons if any burns were successful
+        if successful_burns: # Check if the list has items
+            st.markdown("---")
+            st.subheader("🔥 焼き込み済み動画ファイル")
+            st.caption("動画ファイルはサイズが大きい場合があります。ダウンロードに時間がかかることがあります。")
+
+            col_dl_burn1, col_dl_burn2 = st.columns(2)
+            current_col_burn = col_dl_burn1
+
+            for i, burned_video_path_str in enumerate(successful_burns):
+                burned_video_path = Path(burned_video_path_str)
+                if burned_video_path.is_file():
+                    try:
+                        # Read video file as bytes
+                        with open(burned_video_path, "rb") as fp:
+                            btn_data_video = fp.read()
+
+                        # Display download button
+                        with current_col_burn:
+                            st.download_button(
+                                label=f"ダウンロード: {burned_video_path.name}",
+                                data=btn_data_video,
+                                file_name=burned_video_path.name,
+                                mime='video/mp4', # Assuming MP4 output
+                                key=f"download_burn_{i}_{burned_video_path.name}" # Unique key
+                            )
+                            # Alternate columns
+                            current_col_burn = col_dl_burn2 if current_col_burn == col_dl_burn1 else col_dl_burn1
+                    except Exception as read_err:
+                        st.error(f"ファイル読み込みエラー ({burned_video_path.name}): {read_err}")
+                        logger.error(f"Error reading burned video file for download ({burned_video_path.name}): {read_err}")
+                else:
+                    st.warning(f"生成されたはずの動画ファイルが見つかりません: {burned_video_path.name}")
+                    logger.warning(f"Burned video file not found for download: {burned_video_path.name}")
