@@ -51,5 +51,5 @@ def transcribe_with_faster_whisper(audio_file_path, model_size="medium", device=
         
     except Exception as e:
         logger.error(f"Error during transcription of {audio_file_path}: {e}")
-        # Consider logging traceback for detailed debugging: logger.exception("Transcription error details:")
+        logger.exception("Detailed traceback for transcription error:") # この行を追加
         return None, None # Indicate failure
