@@ -32,7 +32,7 @@ from pathlib import Path # Add Pathlib import
 import os # Import os module
 import tempfile # Import tempfile module
 
-# --- Helper function to determine output directory (Commented out - Tab 1 uses memory, Tab 2 needs review) ---
+# --- Helper function to determine output directory (Commented out - Tab 1 uses memory, Tab 2 uses tempfile) ---
 # def get_output_dir():
 #     """Determines the output directory as './generated_files' and creates it if needed."""
 #     output_subdir = Path("./generated_files")
@@ -69,7 +69,7 @@ logger = logging.getLogger(__name__)
 
 # --- Initialize session state ---
 if 'generated_files' not in st.session_state:
-    st.session_state['generated_files'] = [] # List to store tuples of (original_video_path, generated_subtitle_path)
+    st.session_state['generated_files'] = [] # List to store tuples of (original_video_path, generated_subtitle_path) - May need review for Tab 2 logic
 if 'last_tab1_font_size' not in st.session_state:
     st.session_state['last_tab1_font_size'] = 65 # Default font size for burning SRT
 
@@ -668,17 +668,12 @@ with tab1:
             elif not gemini_key_from_ui:
                  st.warning("Gemini APIキーが入力されていません。DeepL失敗時のGeminiでの再試行はスキップされます。")
 
-            # Determine the output directory
-            output_directory = get_output_dir()
-            st.info(f"出力先フォルダ: {output_directory}") # Inform user
-
-            # Call main_process with the new arguments including API keys and output_dir
-            main_process(
+            # Call main_process (output_directory removed as Tab 1 uses memory)
+            results = main_process(
                 video_inputs, progress_manager, subtitle_ext, generate_format,
                 style_options, whisper_config, output_language,
                 auto_font_size_enabled, manual_font_size_value,
-                deepl_key_from_ui, gemini_key_from_ui, # Pass keys from UI
-                output_directory # Pass determined output directory
+                deepl_key_from_ui, gemini_key_from_ui # Pass keys from UI
             )
             # --- Display Download Buttons for Generated Subtitles (Moved inside if video_inputs) ---
             if results: # Check if main_process returned any results (list of tuples: prefix, time, filename, content_bytes)
@@ -876,7 +871,7 @@ with tab2:
 
                 # --- 4. Prepare ffmpeg Command ---
                 burn_status_overall.text(f"{pair_prefix}: 字幕焼き込み処理準備中...")
-                logger.info(f"[{pair_prefix}] Starting subtitle burn: Input='{burn_video_path}', Subs='{subtitle_temp_path}', Output='{output_path_burn}'") # Corrected variable name here
+                logger.info(f"[{pair_prefix}] Starting subtitle burn: Input='{burn_video_path}', Subs='{subtitle_temp_path}', Output='{output_path_burn_temp}'") # Corrected variable name here
 
                 subtitle_filter_path = os.path.abspath(subtitle_temp_path)
                 # More robust escaping for Windows paths in ffmpeg filters
@@ -929,13 +924,13 @@ with tab2:
                     error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "不明なFFmpegエラー"
                     st.error(f"[{pair_prefix}] 字幕焼き込み中にエラーが発生しました。")
                     st.text_area(f"FFmpeg エラー詳細 ({os.path.basename(video_input_path)}):", error_msg, height=150)
-                    logger.error(f"[{pair_prefix}] FFmpeg subtitle burn failed for {output_path_burn}. Stderr:\n{error_msg}")
+                    logger.error(f"[{pair_prefix}] FFmpeg subtitle burn failed for {output_path_burn_temp}. Stderr:\n{error_msg}") # Corrected variable
 
             except Error as e:
                 error_msg = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "ffmpeg-pythonエラー"
                 st.error(f"[{pair_prefix}] FFmpeg実行エラーが発生しました。")
                 st.text_area(f"FFmpeg エラー詳細 ({os.path.basename(video_input_path)}):", error_msg, height=150)
-                logger.error(f"[{pair_prefix}] ffmpeg-python error during burn: {error_msg}")
+                logger.error(f"[{pair_prefix}] ffmpeg-python error during burn for {output_path_burn_temp}: {error_msg}") # Corrected variable
             except Exception as e:
                 st.error(f"[{pair_prefix}] 字幕焼き込み中に予期せぬエラーが発生しました: {e}")
                 logger.exception(f"[{pair_prefix}] Unexpected error during subtitle burn process.")
@@ -961,6 +956,49 @@ with tab2:
         burn_status_overall.text(f"全 {total_pairs} ペアの処理完了。{processed_success_count} 件成功。")
         if processed_success_count == total_pairs and total_pairs > 0:
              st.balloons()
+
+        # --- Display Download Buttons for Burned Videos ---
+        # successful_burns now contains tuples of (temp_file_path, original_filename)
+        if successful_burns:
+            st.markdown("---")
+            st.subheader("🔥 焼き込み済み動画ファイル")
+            st.caption("動画ファイルはサイズが大きい場合があります。ダウンロードに時間がかかることがあります。")
+
+            col_dl_burn1, col_dl_burn2 = st.columns(2)
+            current_col_burn = col_dl_burn1
+
+            # Keep track of temp files to potentially clean up later if needed
+            # temp_files_to_clean = [] # Optional: For later cleanup logic
+
+            for i, (temp_path_str, original_filename) in enumerate(successful_burns):
+                temp_video_path = Path(temp_path_str)
+                if temp_video_path.is_file():
+                    try:
+                        # Read the temporary video file as bytes
+                        with open(temp_video_path, "rb") as fp:
+                            btn_data_video = fp.read()
+
+                        # Display download button using the original filename
+                        with current_col_burn:
+                            st.download_button(
+                                label=f"ダウンロード: {original_filename}",
+                                data=btn_data_video,
+                                file_name=original_filename, # Use the intended filename
+                                mime='video/mp4', # Assuming MP4 output
+                                key=f"download_burn_{i}_{original_filename}" # Unique key
+                            )
+                            # temp_files_to_clean.append(temp_video_path) # Optional: Track for cleanup
+                        # Alternate columns
+                        current_col_burn = col_dl_burn2 if current_col_burn == col_dl_burn1 else col_dl_burn1
+                    except Exception as read_err:
+                        st.error(f"一時ファイル読み込みエラー ({original_filename}): {read_err}")
+                        logger.error(f"Error reading temporary burned video file for download ({temp_video_path}): {read_err}")
+                else:
+                    st.warning(f"一時ファイルが見つかりません: {original_filename} (Path: {temp_video_path})")
+                    logger.warning(f"Temporary burned video file not found for download: {temp_video_path}")
+
+            # Optional: Add logic here or elsewhere to clean up files in temp_files_to_clean
+            # Be careful with cleanup timing due to Streamlit reruns
 
         # --- Display Download Buttons for Burned Videos ---
         # successful_burns now contains tuples of (temp_file_path, original_filename)
