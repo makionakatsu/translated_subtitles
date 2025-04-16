@@ -110,7 +110,8 @@ def generate_srt_content(segments, width=1280, font_size=65, max_lines=2):
             # Ensure width is positive
             safe_width = max(1, width)
             # Calculate approximate characters per line
-            chars_per_line = int((safe_width * 0.8) / (safe_font_size * 0.6))
+            # Changed width factor from 0.8 to 0.7 to make lines shorter
+            chars_per_line = int((safe_width * 0.7) / (safe_font_size * 0.6))
             # Set a minimum sensible length (e.g., 10 characters)
             dynamic_max_line_length = max(10, chars_per_line)
             logger.info(f"Calculated dynamic max_line_length for SRT: {dynamic_max_line_length} (width={width}, font_size={font_size})")
