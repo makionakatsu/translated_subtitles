@@ -68,10 +68,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Initialize session state ---
-if 'generated_files' not in st.session_state:
-    st.session_state['generated_files'] = [] # List to store tuples of (original_video_path, generated_subtitle_path) - May need review for Tab 2 logic
+# if 'generated_files' not in st.session_state: # Old key, commented out
+#     st.session_state['generated_files'] = []
+if 'generated_subtitles_data' not in st.session_state:
+    st.session_state['generated_subtitles_data'] = [] # New list for (video_path, filename, content_bytes)
 if 'last_tab1_font_size' not in st.session_state:
-    st.session_state['last_tab1_font_size'] = 65 # Default font size for burning SRT
+    st.session_state['last_tab1_font_size'] = 50 # Default font size for burning SRT (Changed from 65)
 
 # --- Helper Functions ---
 def is_valid_url(url):
@@ -344,7 +346,8 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
                 # Simple auto-calculation based on width (aim for ~30 chars wide)
                 # Ensure width is positive
                 safe_width = max(1, width)
-                final_font_size = max(10, int(safe_width / 30)) # Ensure minimum size 10
+                # Changed divisor from 30 to 40 for smaller auto font size
+                final_font_size = max(10, int(safe_width / 40)) # Ensure minimum size 10
                 logger.info(f"[{prefix}] Auto-calculated font size: {final_font_size} (based on width: {width})")
             else:
                 final_font_size = manual_font_size # Use the manually provided size
@@ -377,7 +380,8 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
                          }
                     chosen_style_name = "Default"
                 header = generate_ass_header(width, height, styles_data, chosen_style_name, show_bg, font_size=final_font_size)
-                dialogue_lines = generate_ass_dialogue(segments, chosen_style_name, width=width, font_size=final_font_size)
+                # Pass styles_data to generate_ass_dialogue
+                dialogue_lines = generate_ass_dialogue(segments, styles_data, chosen_style_name, width=width, font_size=final_font_size)
                 ass_content = header + dialogue_lines
                 generated_content_bytes = ass_content.encode('utf-8')
             elif generate_format == "FCPXMLファイル（Final Cut Pro用）":
@@ -398,21 +402,19 @@ def process_video(video_input, idx, progress_manager, subtitle_ext, generate_for
             error_handler.handle(f"字幕コンテンツ生成エラー: {sub_err}", prefix=prefix)
             return None # Stop processing this video
 
-        # --- Store original video path info in session state (still needed for Tab 2) ---
-        # We no longer store the subtitle path, as it's not written to disk
-        original_source = video_input if os.path.exists(video_input) else downloaded_video_path if downloaded_video_path else video_input
-        video_path_for_session = video_path if os.path.exists(video_path) else None
-        if video_path_for_session:
-             # Store only the video path and maybe the intended subtitle filename for reference in Tab 2?
-             # For now, let's just keep the original logic but without the subtitle path.
-             # This might need adjustment depending on how Tab 2 selects inputs.
-             # Let's clear generated_files for now to avoid confusion, as it expected paths.
-             # st.session_state['generated_files'].append((video_path_for_session, output_filename)) # Store filename instead?
-             pass # Decide later how Tab 2 should get info if needed without subtitle file path
+        # --- Store generated content info in session state for Tab 2 ---
+        video_path_for_session = video_path # Use the determined video_path
+        if video_path_for_session and os.path.exists(video_path_for_session):
+             # Ensure the list exists before appending
+             if 'generated_subtitles_data' not in st.session_state:
+                 st.session_state['generated_subtitles_data'] = []
+             # Append tuple: (video_path, subtitle_filename, subtitle_bytes)
+             st.session_state['generated_subtitles_data'].append((str(video_path_for_session), output_filename, generated_content_bytes))
+             logger.info(f"Added to session state 'generated_subtitles_data': ({str(video_path_for_session)}, {output_filename}, {len(generated_content_bytes)} bytes)")
         else:
-             logger.warning(f"Could not determine valid video path for session state for input: {video_input}")
+             logger.warning(f"Could not determine valid video path for session state or path doesn't exist: {video_path_for_session}")
 
-        # Return filename and content bytes
+        # Return filename and content bytes (for Tab 1 download button)
         return (prefix, time.time() - video_start_time, output_filename, generated_content_bytes)
 
     except Exception as e:
@@ -505,38 +507,89 @@ tab1, tab2 = st.tabs(["🎤 字幕ファイル作成", "🔥 字幕焼き込み"
 with tab1:
     results = [] # Initialize results list here
     st.header("1. 入力ファイルの指定")
-    input_method = st.radio("入力方法:", ["パス・URLを直接入力", "ローカルファイルをアップロード"], key="tab1_input_method")
+    # Removed radio button - show both inputs
+
+    # --- URL Input Section ---
+    st.subheader("URLから入力")
+    url_input = st.text_area(
+        "動画のURLを1行ずつ入力:",
+        placeholder="例:\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\nhttps://vimeo.com/...",
+        height=100,
+        key="tab1_url_input"
+    )
+    url_video_inputs = [line.strip() for line in url_input.splitlines() if line.strip() and is_valid_url(line.strip())]
+    # Log invalid URLs entered? Optional.
+
+    # --- File Uploader Section ---
+    st.subheader("ローカルファイルからアップロード")
+    uploaded_files = st.file_uploader(
+        "動画・音声ファイルを選択 (複数可):",
+        type=["mp4", "mov", "mkv", "avi", "wmv", "flv", "webm", "wav", "mp3", "m4a"], # Allow common video/audio
+        accept_multiple_files=True,
+        key="tab1_file_uploader"
+    )
+    # Define persistent directory for uploads
+    persistent_upload_dir = Path("./persistent_videos")
+    try:
+        persistent_upload_dir.mkdir(parents=True, exist_ok=True) # Create directory if it doesn't exist
+        logger.info(f"Ensured persistent upload directory exists: {persistent_upload_dir.resolve()}")
+    except OSError as e:
+        st.error(f"アップロード用ディレクトリの作成に失敗しました: {persistent_upload_dir}. アプリケーションを再起動するか、権限を確認してください。")
+        logger.error(f"Failed to create persistent upload directory '{persistent_upload_dir}': {e}")
+        st.stop() # Stop execution if directory cannot be created
+
+    # Initialize video_inputs list *before* the loop to ensure correct scope
     video_inputs = []
 
-    if input_method == "パス・URLを直接入力":
-        url_input = st.text_area(
-            "動画のパスやURLを1行ずつ入力:",
-            placeholder="例:\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\n/Users/username/Movies/my_video.mp4",
-            height=100,
-            key="tab1_url_input"
-        )
-        video_inputs = [line.strip() for line in url_input.splitlines() if line.strip()]
-    elif input_method == "ローカルファイルをアップロード":
-        uploaded_files = st.file_uploader(
-            "動画ファイルを選択 (複数可):",
-            type=["mp4", "mov", "mkv", "avi", "wmv", "flv", "webm", "wav", "mp3", "m4a"], # Allow common video/audio
-            accept_multiple_files=True,
-            key="tab1_file_uploader"
-        )
-        temp_upload_dir = "./temp_uploads"
-        os.makedirs(temp_upload_dir, exist_ok=True)
-        if uploaded_files:
-            for file in uploaded_files:
-                safe_filename = re.sub(r'[\\/*?:"<>|]', "_", file.name)
-                path = os.path.join(temp_upload_dir, f"uploaded_{datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_filename}")
-                try:
-                    with open(path, "wb") as f:
-                        f.write(file.getbuffer())
-                    st.success(f"アップロード完了: {file.name} -> {os.path.basename(path)}")
-                    video_inputs.append(path)
-                except Exception as e:
-                    st.error(f"ファイル保存失敗 ({file.name}): {e}")
-                    logger.error(f"Failed to save uploaded file {file.name} to {path}: {e}")
+    if uploaded_files:
+        for file in uploaded_files:
+            # Sanitize filename to prevent path traversal or invalid characters
+            safe_filename = re.sub(r'[\\/*?:"<>|]', "_", file.name)
+            # Create a unique filename to avoid collisions
+            unique_filename = f"uploaded_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{safe_filename}"
+            path = persistent_upload_dir / unique_filename # Use Path object for joining
+            try:
+                with open(path, "wb") as f:
+                    f.write(file.getbuffer())
+                absolute_path = path.resolve() # Get the absolute path
+                st.success(f"アップロード完了: {file.name} -> {path.name} (保存先: {absolute_path})")
+                video_inputs.append(str(absolute_path)) # Append the string representation of the ABSOLUTE path
+                logger.info(f"Saved uploaded file {file.name} to persistent path: {absolute_path}")
+            except Exception as e:
+                st.error(f"ファイル保存失敗 ({file.name}): {e}")
+                logger.error(f"Failed to save uploaded file {file.name} to {path}: {e}")
+
+    # Combine inputs from both methods
+    uploaded_video_paths = [] # Store paths of successfully uploaded files
+    if uploaded_files:
+        for file in uploaded_files:
+            # Reuse the saving logic (already adds to persistent_upload_dir)
+            # Sanitize filename
+            safe_filename = re.sub(r'[\\/*?:"<>|]', "_", file.name)
+            # Create a unique filename
+            unique_filename = f"uploaded_{datetime.now().strftime('%Y%m%d%H%M%S%f')}_{safe_filename}"
+            path = persistent_upload_dir / unique_filename
+            try:
+                # Check if already saved (Streamlit might rerun script on interaction)
+                # This check might be complex due to unique names, rely on video_inputs list below
+                # Instead of saving again here, we retrieve paths from the earlier loop
+                # Find the corresponding path in video_inputs based on original filename? Risky.
+                # Let's assume the earlier loop correctly populated video_inputs with absolute paths
+                # We just need to get those paths.
+                # The `video_inputs` list is populated correctly in the loop above.
+                pass # Paths are already added to video_inputs list above
+            except Exception as e:
+                 # This block might not be needed if we rely on the first loop
+                 st.error(f"ファイル処理エラー ({file.name}): {e}")
+                 logger.error(f"Error processing uploaded file {file.name} after initial save: {e}")
+
+    # Combine URL inputs file paths (absolute paths)
+    # The `video_inputs` list already contains the absolute paths from the upload loop.
+    # We need to add the valid URLs to this list.
+    final_video_inputs = video_inputs + url_video_inputs
+    # Log the combined list for debugging
+    logger.info(f"Combined video inputs for processing: {final_video_inputs}")
+
 
     st.header("2. 出力設定")
     # Use 4 columns for horizontal layout
@@ -569,7 +622,7 @@ with tab1:
 
         # Use session state to remember the last manual value if user toggles auto off/on
         if 'manual_font_size' not in st.session_state:
-            st.session_state.manual_font_size = 65 # Default manual value
+            st.session_state.manual_font_size = 50 # Default manual value (Changed from 65)
 
         # Store the current manual input value
         manual_font_size_input = st.number_input(
@@ -637,7 +690,8 @@ with tab1:
     progress_manager = ProgressManager(key_suffix="tab1")
 
     if process_button_clicked:
-        if video_inputs:
+        # Use the combined list 'final_video_inputs'
+        if final_video_inputs:
             if generate_format == "ASSファイル（装飾あり）" and not style_options.get("style_choice"):
                  st.error("ASSスタイルが選択されていません。styles.jsonを確認するか、デフォルトスタイルを使用します。")
                  if 'Default' in styles:
@@ -668,9 +722,9 @@ with tab1:
             elif not gemini_key_from_ui:
                  st.warning("Gemini APIキーが入力されていません。DeepL失敗時のGeminiでの再試行はスキップされます。")
 
-            # Call main_process (output_directory removed as Tab 1 uses memory)
+            # Call main_process with the combined list
             results = main_process(
-                video_inputs, progress_manager, subtitle_ext, generate_format,
+                final_video_inputs, progress_manager, subtitle_ext, generate_format,
                 style_options, whisper_config, output_language,
                 auto_font_size_enabled, manual_font_size_value,
                 deepl_key_from_ui, gemini_key_from_ui # Pass keys from UI
@@ -715,9 +769,9 @@ with tab1:
                         # This case should ideally not happen if process_video returns correctly
                         st.warning(f"ファイルコンテンツが見つかりません（メモリ内）: {filename}")
                         logger.warning(f"Content bytes not found for {filename} in results list.")
-        # This else block corresponds to 'if video_inputs:'
+        # This else block corresponds to 'if final_video_inputs:'
         else:
-            st.warning("処理する動画が指定されていません。")
+            st.warning("処理する動画URLまたはファイルが指定されていません。")
 
 
 # --- Tab 2: Burn Subtitles ---
@@ -733,36 +787,52 @@ with tab2:
 
     video_subtitle_pairs = [] # List to hold pairs: (video_path, subtitle_path)
     output_filenames = {} # Dictionary to store suggested output names {video_path: output_name}
+    subtitle_data_for_burn = {} # Store subtitle filename and bytes: {video_path: (sub_filename, sub_bytes)}
 
     if burn_source_option == "字幕ファイル作成タブで生成したファイルを使用": # Renamed condition
         st.subheader("字幕ファイル作成タブで生成されたファイル:") # Renamed subheader
-        if not st.session_state.get('generated_files'):
+        # Use the new session state key
+        if not st.session_state.get('generated_subtitles_data'):
             st.info("字幕ファイル作成タブでまだ字幕ファイルが生成されていません。") # Renamed info text
         else:
-            # Filter out pairs where files might no longer exist
-            valid_generated_files = [
-                (v, s) for v, s in st.session_state['generated_files']
-                if v and os.path.exists(v) and os.path.exists(s)
-            ]
+            # --- Debugging Logs Start ---
+            session_data = st.session_state.get('generated_subtitles_data', [])
+            logger.info(f"[Tab 2 Debug] Session state 'generated_subtitles_data': {session_data}")
+            logger.info("[Tab 2 Debug] Checking existence of video paths in session state:")
+            for i, (v_path, s_filename, _) in enumerate(session_data):
+                exists = os.path.exists(v_path) if v_path else False
+                logger.info(f"[Tab 2 Debug]   Pair {i}: Path='{v_path}', Exists={exists}")
+            # --- Debugging Logs End ---
 
+            # Filter out data where video file might no longer exist (less likely in cloud but good practice)
+            valid_generated_data = [
+                (v_path, s_filename, s_bytes) for v_path, s_filename, s_bytes
+                in session_data # Use the variable we already retrieved
+                if v_path and os.path.exists(v_path) # Check if original video path still exists
+            ]
+            logger.info(f"[Tab 2 Debug] Filtered valid_generated_data count: {len(valid_generated_data)}") # Log count after filtering
+
+            # Create options for multiselect: "Video Name + Subtitle Name" -> (video_path, (sub_filename, sub_bytes))
             generated_files_options = {
-                f"{os.path.basename(v)} + {os.path.basename(s)}": (v, s)
-                for v, s in valid_generated_files
+                f"{os.path.basename(v_path)} + {s_filename}": (v_path, (s_filename, s_bytes))
+                for v_path, s_filename, s_bytes in valid_generated_data
             }
 
             if not generated_files_options:
-                 st.warning("有効な生成済みファイルペアが見つかりません。タブ1で再生成するか、ファイルパスを確認してください。")
+                 st.warning("有効な生成済みデータペアが見つかりません。タブ1で再生成するか、ファイルパスを確認してください。")
             else:
                 selected_pairs_display = st.multiselect(
                     "焼き込むペアを選択:",
                     options=list(generated_files_options.keys()),
                     key="tab2_generated_select"
                 )
+                # video_subtitle_pairs will now contain tuples of (video_path, (sub_filename, sub_bytes))
                 video_subtitle_pairs = [generated_files_options[key] for key in selected_pairs_display]
 
-                for video_path, subtitle_path in video_subtitle_pairs:
+                # Populate output_filenames based on selected pairs
+                for video_path, (sub_filename, _) in video_subtitle_pairs:
                      base, _ = os.path.splitext(os.path.basename(video_path))
-                     sub_ext = os.path.splitext(subtitle_path)[1] # .srt or .ass
+                     sub_ext = os.path.splitext(sub_filename)[1] # Get extension from filename
                      output_filenames[video_path] = f"{base}{sub_ext.replace('.', '_')}_burned.mp4"
 
 
@@ -775,10 +845,14 @@ with tab2:
             key="tab2_subtitle_upload_individual"
         )
         if burn_video_input and uploaded_subtitle_individual:
-             st.info("個別指定の複数ファイル対応は現在制限されています。「字幕ファイル作成タブで生成したファイルを使用」を推奨します。") # Renamed info text
-             video_subtitle_pairs = [(burn_video_input, uploaded_subtitle_individual)]
+             st.info("個別指定の複数ファイル対応は現在制限されています。「字幕ファイル作成タブで生成したファイルを使用」を推奨します。")
+             # Read the uploaded subtitle file bytes
+             sub_bytes_individual = uploaded_subtitle_individual.getvalue()
+             sub_filename_individual = uploaded_subtitle_individual.name
+             # Store in the same format: (video_path, (sub_filename, sub_bytes))
+             video_subtitle_pairs = [(burn_video_input, (sub_filename_individual, sub_bytes_individual))]
              base, _ = os.path.splitext(os.path.basename(burn_video_input)) if not is_valid_url(burn_video_input) else ("downloaded_video", "")
-             sub_ext = os.path.splitext(uploaded_subtitle_individual.name)[1]
+             sub_ext = os.path.splitext(sub_filename_individual)[1]
              output_filenames[burn_video_input] = f"{base}{sub_ext.replace('.', '_')}_burned.mp4"
 
     # Removed font size input from Tab 2
@@ -786,11 +860,19 @@ with tab2:
     st.header("実行")
     if video_subtitle_pairs:
         st.markdown("以下のペアで焼き込み処理を実行します:")
-        for video_path, sub_path_or_obj in video_subtitle_pairs:
+        # video_subtitle_pairs now contains (video_path, (sub_filename, sub_bytes)) or (video_path, UploadedFile)
+        for video_path, subtitle_info_tuple_or_obj in video_subtitle_pairs:
              out_name = output_filenames.get(video_path, "不明な出力ファイル名")
-             sub_display_name = sub_path_or_obj if isinstance(sub_path_or_obj, str) else sub_path_or_obj.name
+             # Extract subtitle filename for display
+             if isinstance(subtitle_info_tuple_or_obj, tuple):
+                 sub_display_name = subtitle_info_tuple_or_obj[0] # Get filename from tuple
+             elif hasattr(subtitle_info_tuple_or_obj, 'name'): # Handle UploadedFile object
+                 sub_display_name = subtitle_info_tuple_or_obj.name
+             else:
+                 sub_display_name = "不明な字幕ファイル"
+
              st.write(f"- 動画: `{os.path.basename(video_path)}`")
-             st.write(f"- 字幕: `{os.path.basename(sub_display_name)}`")
+             st.write(f"- 字幕: `{sub_display_name}`")
              st.write(f"- 出力: `{out_name}`")
              st.markdown("---")
 
@@ -826,17 +908,30 @@ with tab2:
 
             try:
                 # --- 1. Prepare Subtitle File ---
-                if isinstance(subtitle_info, str) and os.path.exists(subtitle_info):
+                if isinstance(subtitle_info, tuple) and len(subtitle_info) == 2:
+                    # Handles the tuple (filename, bytes) passed from Tab 1 via session state
+                    sub_filename, sub_bytes = subtitle_info
+                    # Ensure filename is just the name, not potential path parts if any were included
+                    safe_sub_filename = os.path.basename(sub_filename)
+                    subtitle_temp_path = f"./temp_burn_{safe_sub_filename}" # Use original filename for temp name
+                    with open(subtitle_temp_path, "wb") as f:
+                        f.write(sub_bytes)
+                    logger.info(f"[{pair_prefix}] Saved subtitle bytes from session state ('{safe_sub_filename}') to temporary file: {subtitle_temp_path}")
+                elif isinstance(subtitle_info, str) and os.path.exists(subtitle_info):
+                    # Handles the case where subtitle_info is a path string (less likely now)
                     subtitle_temp_path = f"./temp_burn_{os.path.basename(subtitle_info)}"
                     shutil.copy2(subtitle_info, subtitle_temp_path)
-                    logger.info(f"[{pair_prefix}] Copied subtitle {subtitle_info} to {subtitle_temp_path}")
+                    logger.info(f"[{pair_prefix}] Copied subtitle file {subtitle_info} to {subtitle_temp_path}")
                 elif hasattr(subtitle_info, 'name') and hasattr(subtitle_info, 'getbuffer'):
+                    # Handles the case where subtitle_info is an UploadedFile object (from individual upload)
                     subtitle_temp_path = f"./temp_burn_{subtitle_info.name}"
                     with open(subtitle_temp_path, "wb") as f:
                         f.write(subtitle_info.getbuffer())
-                    logger.info(f"[{pair_prefix}] Saved uploaded subtitle to {subtitle_temp_path}")
+                    logger.info(f"[{pair_prefix}] Saved uploaded subtitle ('{subtitle_info.name}') to {subtitle_temp_path}")
                 else:
-                    st.error(f"[{pair_prefix}] 無効な字幕ファイル情報です: {subtitle_info}")
+                    # If none of the above match, then it's invalid
+                    st.error(f"[{pair_prefix}] 無効な字幕ファイル情報形式です: {type(subtitle_info)}")
+                    logger.error(f"[{pair_prefix}] Invalid subtitle info type: {type(subtitle_info)}, value: {subtitle_info}")
                     continue
 
                 # --- 2. Prepare Video File ---
@@ -871,7 +966,7 @@ with tab2:
 
                 # --- 4. Prepare ffmpeg Command ---
                 burn_status_overall.text(f"{pair_prefix}: 字幕焼き込み処理準備中...")
-                logger.info(f"[{pair_prefix}] Starting subtitle burn: Input='{burn_video_path}', Subs='{subtitle_temp_path}', Output='{output_path_burn_temp}'") # Corrected variable name here
+                logger.info(f"[{pair_prefix}] Starting subtitle burn: Input='{burn_video_path}', Subs='{subtitle_temp_path}', Output='{output_path_burn_temp}'")
 
                 subtitle_filter_path = os.path.abspath(subtitle_temp_path)
                 # More robust escaping for Windows paths in ffmpeg filters
@@ -881,7 +976,7 @@ with tab2:
                 font_style_options = [] # For force_style
 
                 # Get font size from session state (set in Tab 1) - Use default if not found
-                srt_burn_font_size = st.session_state.get('last_tab1_font_size', 65)
+                srt_burn_font_size = st.session_state.get('last_tab1_font_size', 50) # Changed default from 65
                 font_style_options.append(f"FontSize={srt_burn_font_size}")
 
                 if is_vertical:
@@ -894,14 +989,16 @@ with tab2:
                 if subtitle_temp_path.lower().endswith(".ass"):
                      # For ASS, generally avoid force_style unless absolutely necessary
                      vf_filter_list.append(f"ass='{subtitle_filter_path_escaped}'")
+                     logger.info(f"[{pair_prefix}] [ASS Burn Debug] Using ASS filter: ass='{subtitle_filter_path_escaped}'") # Debug Log
                      if is_vertical:
                           logger.warning(f"[{pair_prefix}] Vertical video detected with ASS. Styles might need manual adjustment in ASS file or styles.json for best results.")
                 else: # .srt
                      # Apply force_style for SRT, including font size and vertical adjustments
                      vf_filter_list.append(f"subtitles='{subtitle_filter_path_escaped}':force_style='{force_style_value}'")
-                     logger.info(f"[{pair_prefix}] Applying force_style for SRT: {force_style_value}")
+                     logger.info(f"[{pair_prefix}] [SRT Burn Debug] Applying force_style for SRT: {force_style_value}") # Debug Log
 
                 final_vf_filter = ",".join(vf_filter_list)
+                logger.info(f"[{pair_prefix}] [FFmpeg Burn Debug] Final vf filter string: {final_vf_filter}") # Debug Log
 
                 # --- 5. Run ffmpeg Process ---
                 burn_status_overall.text(f"{pair_prefix}: 字幕焼き込み実行中...")
@@ -957,88 +1054,29 @@ with tab2:
         if processed_success_count == total_pairs and total_pairs > 0:
              st.balloons()
 
-        # --- Display Download Buttons for Burned Videos ---
-        # successful_burns now contains tuples of (temp_file_path, original_filename)
+        # --- Add Download Buttons for Burned Videos ---
         if successful_burns:
             st.markdown("---")
-            st.subheader("🔥 焼き込み済み動画ファイル")
-            st.caption("動画ファイルはサイズが大きい場合があります。ダウンロードに時間がかかることがあります。")
+            st.subheader("✅ 焼き込み済み動画のダウンロード")
+            col_burn_dl1, col_burn_dl2 = st.columns(2) # Use columns for layout
+            current_burn_col = col_burn_dl1
 
-            col_dl_burn1, col_dl_burn2 = st.columns(2)
-            current_col_burn = col_dl_burn1
-
-            # Keep track of temp files to potentially clean up later if needed
-            # temp_files_to_clean = [] # Optional: For later cleanup logic
-
-            for i, (temp_path_str, original_filename) in enumerate(successful_burns):
-                temp_video_path = Path(temp_path_str)
-                if temp_video_path.is_file():
+            for temp_path, final_name in successful_burns:
+                if os.path.exists(temp_path):
                     try:
-                        # Read the temporary video file as bytes
-                        with open(temp_video_path, "rb") as fp:
-                            btn_data_video = fp.read()
-
-                        # Display download button using the original filename
-                        with current_col_burn:
-                            st.download_button(
-                                label=f"ダウンロード: {original_filename}",
-                                data=btn_data_video,
-                                file_name=original_filename, # Use the intended filename
-                                mime='video/mp4', # Assuming MP4 output
-                                key=f"download_burn_{i}_{original_filename}" # Unique key
+                        with open(temp_path, "rb") as fp:
+                            btn = current_burn_col.download_button(
+                                label=f"ダウンロード: {final_name}",
+                                data=fp, # Pass file object directly (more efficient for large files)
+                                file_name=final_name,
+                                mime="video/mp4",
+                                key=f"download_burn_{final_name}" # Unique key
                             )
-                            # temp_files_to_clean.append(temp_video_path) # Optional: Track for cleanup
                         # Alternate columns
-                        current_col_burn = col_dl_burn2 if current_col_burn == col_dl_burn1 else col_dl_burn1
-                    except Exception as read_err:
-                        st.error(f"一時ファイル読み込みエラー ({original_filename}): {read_err}")
-                        logger.error(f"Error reading temporary burned video file for download ({temp_video_path}): {read_err}")
+                        current_burn_col = col_burn_dl2 if current_burn_col == col_burn_dl1 else col_burn_dl1
+                    except Exception as e:
+                        st.error(f"ダウンロードボタン作成エラー ({final_name}): {e}")
+                        logger.error(f"Error creating download button for burned video {final_name} from {temp_path}: {e}")
                 else:
-                    st.warning(f"一時ファイルが見つかりません: {original_filename} (Path: {temp_video_path})")
-                    logger.warning(f"Temporary burned video file not found for download: {temp_video_path}")
-
-            # Optional: Add logic here or elsewhere to clean up files in temp_files_to_clean
-            # Be careful with cleanup timing due to Streamlit reruns
-
-        # --- Display Download Buttons for Burned Videos ---
-        # successful_burns now contains tuples of (temp_file_path, original_filename)
-        if successful_burns:
-            st.markdown("---")
-            st.subheader("🔥 焼き込み済み動画ファイル")
-            st.caption("動画ファイルはサイズが大きい場合があります。ダウンロードに時間がかかることがあります。")
-
-            col_dl_burn1, col_dl_burn2 = st.columns(2)
-            current_col_burn = col_dl_burn1
-
-            # Keep track of temp files to potentially clean up later if needed
-            # temp_files_to_clean = [] # Optional: For later cleanup logic
-
-            for i, (temp_path_str, original_filename) in enumerate(successful_burns):
-                temp_video_path = Path(temp_path_str)
-                if temp_video_path.is_file():
-                    try:
-                        # Read the temporary video file as bytes
-                        with open(temp_video_path, "rb") as fp:
-                            btn_data_video = fp.read()
-
-                        # Display download button using the original filename
-                        with current_col_burn:
-                            st.download_button(
-                                label=f"ダウンロード: {original_filename}",
-                                data=btn_data_video,
-                                file_name=original_filename, # Use the intended filename
-                                mime='video/mp4', # Assuming MP4 output
-                                key=f"download_burn_{i}_{original_filename}" # Unique key
-                            )
-                            # temp_files_to_clean.append(temp_video_path) # Optional: Track for cleanup
-                        # Alternate columns
-                        current_col_burn = col_dl_burn2 if current_col_burn == col_dl_burn1 else col_dl_burn1
-                    except Exception as read_err:
-                        st.error(f"一時ファイル読み込みエラー ({original_filename}): {read_err}")
-                        logger.error(f"Error reading temporary burned video file for download ({temp_video_path}): {read_err}")
-                else:
-                    st.warning(f"一時ファイルが見つかりません: {original_filename} (Path: {temp_video_path})")
-                    logger.warning(f"Temporary burned video file not found for download: {temp_video_path}")
-
-            # Optional: Add logic here or elsewhere to clean up files in temp_files_to_clean
-            # Be careful with cleanup timing due to Streamlit reruns
+                    logger.warning(f"Burned video temporary file not found for download: {temp_path} (intended name: {final_name})")
+                    st.warning(f"焼き込み済みファイルが見つかりません: {final_name}")

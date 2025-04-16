@@ -1,32 +1,42 @@
 {
   "Hiragino Kaku Gothic ProN": {
-    "Fontname": "Hiragino Kaku Gothic ProN",
+    "Fontname": "Arial",
     "PrimaryColour": "&H00FFFFFF",
     "Outline": 3,
-    "OutlineColour": "&H00000000"
+    "OutlineColour": "&H00000000",
+    "MarginL": "50",
+    "MarginR": "50"
   },
   "Yu Gothic UI": {
     "Fontname": "Yu Gothic UI",
     "PrimaryColour": "&H00FFFFFF",
     "Outline": 3,
-    "OutlineColour": "&H00000000"
+    "OutlineColour": "&H00000000",
+    "MarginL": "50",
+    "MarginR": "50"
   },
   "Meiryo": {
     "Fontname": "Meiryo",
     "PrimaryColour": "&H00FFFFFF",
     "Outline": 3,
-    "OutlineColour": "&H00000000"
+    "OutlineColour": "&H00000000",
+    "MarginL": "50",
+    "MarginR": "50"
   },
   "Yu Mincho": {
     "Fontname": "Yu Mincho",
     "PrimaryColour": "&H00FFFFFF",
     "Outline": 3,
-    "OutlineColour": "&H00000000"
+    "OutlineColour": "&H00000000",
+    "MarginL": "50",
+    "MarginR": "50"
   },
   "Courier New": {
     "Fontname": "Courier New",
     "PrimaryColour": "&H00FFFFFF",
     "Outline": 3,
-    "OutlineColour": "&H00000000"
+    "OutlineColour": "&H00000000",
+    "MarginL": "50",
+    "MarginR": "50"
   }
 }

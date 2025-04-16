@@ -14,3 +14,6 @@ process_log.log
 
 # Temporary upload directory
 temp_uploads/
+
+# Persistent video directory (ignore uploaded videos)
+persistent_videos/
