@@ -45,7 +45,7 @@ def _write_srt(segments, out_path: Path):
             text = raw_text.strip().replace("\n", " ")
             f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
 
-def _write_ass(segments, out_path: Path):
+def _write_ass(segments, out_path: Path, font_size: int):
     """Write segments to .ass"""
     with out_path.open("w", encoding="utf-8") as f:
         # Script Info
@@ -59,7 +59,7 @@ def _write_ass(segments, out_path: Path):
         f.write("[V4+ Styles]\n")
         f.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, " 
                 "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-        f.write("Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n")
+        f.write(f"Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n")
         f.write("\n")
         # Events
         f.write("[Events]\n")
@@ -138,6 +138,14 @@ def download_video(url, output_dir="./", prefix=""):
                 else:
                     raise
         return output_path
+    except KeyError as e:
+        # Merge時のKeyErrorをキャッチして単純なbestフォーマットで再試行
+        st.warning(f"フォーマット処理中にエラーが発生したため、ベストフォーマットで再試行します: {e}")
+        simple_opts = {"outtmpl": output_path, "format": "best", "quiet": True}
+        with yt_dlp.YoutubeDL(simple_opts) as ydl_simple:
+            ydl_simple.download([url])
+        return output_path
+    
     finally:
         progress_bar.empty()
         progress_text.empty()
@@ -279,7 +287,7 @@ def process_video(
         if generate_format.upper() == "SRT":
             _write_srt(segments, output_path)
         elif generate_format.upper() == "ASS":
-            _write_ass(segments, output_path)
+            _write_ass(segments, output_path, manual_font_size)
         elif generate_format.upper() == "FCPXML":
             # FCPXML writer using fcpxml_utils
             xml_content = generate_fcpxml(segments, video_path, manual_font_size)
