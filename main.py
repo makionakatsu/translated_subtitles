@@ -23,6 +23,7 @@ from utils.processing import (
     main_process,
 )
 from utils.burn_utils import burn_subtitles
+from utils.video_utils import get_video_resolution
 
 # ── Initial Setup ────────────────────────────────────────────────────
 st.set_page_config(page_title="一撃！字幕生成くん", page_icon="🎬", layout="wide")
@@ -98,6 +99,21 @@ with tab_generate:
             uploaded_paths.append(str(dest))
 
     video_inputs = urls + uploaded_paths
+    # ユーザー指定の左右余白率（％）
+    margin_pct = st.slider("左右余白率 (%)", 0, 20, 2)
+    # Determine default font size based on video width and margin_pct
+    default_font_size = 50
+    if video_inputs:
+        first = video_inputs[0]
+        try:
+            if os.path.isfile(first):
+                w, _ = get_video_resolution(first)
+                left = int(w * margin_pct / 100)
+                right = left
+                available = w - left - right
+                default_font_size = max(10, min(120, int(available * 0.05)))
+        except Exception:
+            default_font_size = 50
 
     st.header("3. 出力設定")
     col1, col2 = st.columns(2)
@@ -116,7 +132,13 @@ with tab_generate:
 
     # Font size option
     auto_font = st.checkbox("フォントサイズ自動", value=True)
-    manual_font = st.slider("フォントサイズ（手動）", 10, 120, 50, disabled=auto_font)
+    manual_font = st.slider(
+        "フォントサイズ（手動）",
+        10,
+        120,
+        default_font_size,
+        disabled=auto_font,
+    )
 
     # Output language
     output_language = st.selectbox(
@@ -198,22 +220,31 @@ with tab_burn:
         temp_dir = Path("./burn_temp")
         temp_dir.mkdir(exist_ok=True)
 
-        if is_valid_url(pair["video"]):
+        # Prefer existing local file; download only if missing
+        candidate = pair["video"]
+        if os.path.exists(str(candidate)):
+            video_path_selected = candidate
+        elif is_valid_url(candidate):
             st.info("URL から動画をダウンロード中…")
             video_path_selected = download_video(
-                pair["video"],
+                candidate,
                 output_dir=str(temp_dir),
                 prefix="burn_",
             )
         else:
-            video_path_selected = pair["video"]
+            video_path_selected = candidate
 
         st.info(f"選択中: {video_path_selected} + {subtitle_path_selected}")
     else:
         video_file = st.file_uploader("動画ファイル", type=["mp4", "mov", "mkv", "avi"])
         subtitle_file = st.file_uploader("字幕ファイル", type=["srt", "ass"])
 
-    burn_font_size = st.number_input("フォントサイズ", 10, 120, 24)
+    burn_font_size = st.number_input(
+        "フォントサイズ",
+        10,
+        120,
+        default_font_size,
+    )
 
     if st.button(
         "焼き込み開始",

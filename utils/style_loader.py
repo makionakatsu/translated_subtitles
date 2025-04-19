@@ -2,24 +2,24 @@
 import json
 import os
 import logging # Import logging
-
-# --- Logging Setup ---
 logger = logging.getLogger(__name__)
+
+# --- Preload styles once for performance ---
+_CACHED_STYLES = {}
+_styles_file = "styles.json"
+if os.path.exists(_styles_file):
+    try:
+        with open(_styles_file, 'r', encoding='utf-8') as _f:
+            _CACHED_STYLES = json.load(_f)
+            logger.info(f"Successfully preloaded styles from {_styles_file}")
+    except Exception as _e:
+        logger.error(f"Failed to preload styles from {_styles_file}: {_e}")
+else:
+    logger.warning(f"Style file not found at import: {_styles_file}")
 
 # --- load_styles: styles.json ファイルを読み込んで字幕スタイル設定を辞書として返す関数 ---
 def load_styles(path="styles.json"):
-    """Loads style definitions from a JSON file."""
-    if not os.path.exists(path):
-        logger.warning(f"Style file not found at {path}. Returning empty styles.")
-        return {}
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            styles = json.load(f)
-            logger.info(f"Successfully loaded styles from {path}")
-            return styles
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from {path}: {e}")
-        return {}
-    except Exception as e:
-        logger.error(f"An unexpected error occurred while loading styles from {path}: {e}")
-        return {}
+    """
+    Returns preloaded style definitions.
+    """
+    return _CACHED_STYLES.copy()

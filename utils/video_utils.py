@@ -3,6 +3,7 @@
 import subprocess
 import os
 import logging
+import ffmpeg
 
 logger = logging.getLogger(__name__)
 
@@ -70,3 +71,28 @@ def convert_to_wav(input_path, output_path):
              except OSError as remove_err:
                 logger.error(f"Failed to remove corrupted output file '{output_path}': {remove_err}")
         return None
+
+def get_video_resolution(input_path: str) -> tuple[int, int]:
+    """
+    Retrieves the width and height of the video file at input_path using ffmpeg.probe.
+
+    Args:
+        input_path (str): Path to the video file.
+
+    Returns:
+        tuple[int, int]: (width, height) in pixels, or (0, 0) on failure.
+    """
+    try:
+        info = ffmpeg.probe(input_path)
+        video_stream = next(
+            (s for s in info["streams"] if s.get("codec_type") == "video"),
+            None,
+        )
+        if video_stream:
+            width = video_stream.get("width", 0)
+            height = video_stream.get("height", 0)
+            return width, height
+        logger.error(f"No video stream found in '{input_path}'")
+    except Exception as e:
+        logger.error(f"Failed to probe video resolution for '{input_path}': {e}")
+    return 0, 0
