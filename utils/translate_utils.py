@@ -18,8 +18,12 @@ LANG_MAP_GEMINI = { # Gemini generally understands full language names or ISO co
 }
 
 TARGET_LANG_MAP_DEEPL = {
-    "日本語": "JA", "英語": "EN-US", # Use EN-US for more common English variant
+    "日本語": "JA",
+    "ja": "JA",        # ←追加
+    "英語": "EN-US",
+    "en": "EN",        # ←追加
 }
+
 TARGET_LANG_MAP_GEMINI = {
     "日本語": "Japanese", "英語": "English",
 }

@@ -17,3 +17,15 @@ temp_uploads/
 
 # Persistent video directory (ignore uploaded videos)
 persistent_videos/
+
+# macOS specific files
+.DS_Store
+
+# Log files
+*.log
+
+# Temporary burn directory
+burn_temp/
+
+# Root level video files
+/*.mp4
