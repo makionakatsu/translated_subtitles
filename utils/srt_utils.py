@@ -118,7 +118,9 @@ def generate_srt_content(segments, width=1280, font_size=65, max_lines=2):
 
             # Basic text cleaning and wrapping using dynamic length
             cleaned_text = text.strip().replace('\n', ' ')
-            wrapped_lines = textwrap.wrap(cleaned_text, width=dynamic_max_line_length, drop_whitespace=False, replace_whitespace=False)
+            # Remove uncommon/suspicious characters (e.g., full-width tildes, control codes)
+            cleaned_text = re.sub(r"[^\x20-\x7Eぁ-んァ-ヶ一-龯ー。、？！\s]", "", cleaned_text)
+            wrapped_lines = textwrap.wrap(cleaned_text, width=dynamic_max_line_length, drop_whitespace=False, replace_whitespace=True)
 
             # Limit number of lines
             if len(wrapped_lines) > max_lines:
