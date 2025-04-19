@@ -45,6 +45,13 @@ def _write_srt(segments, out_path: Path):
             text = raw_text.strip().replace("\n", " ")
             f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
 
+def _format_ass_timestamp(sec: float) -> str:
+    """sec (float) -> 'HH:MM:SS.cc' for ASS (centiseconds)"""
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    cs = int(round((s - int(s)) * 100))
+    return f"{int(h):02}:{int(m):02}:{int(s):02}.{cs:02}"
+
 def _write_ass(segments, out_path: Path, font_size: int):
     """Write segments to .ass"""
     with out_path.open("w", encoding="utf-8") as f:
@@ -54,19 +61,20 @@ def _write_ass(segments, out_path: Path, font_size: int):
         f.write("Collisions: Normal\n")
         f.write("PlayResX: 1920\n")
         f.write("PlayResY: 1080\n")
+        f.write("WrapStyle: 1\n")
         f.write("\n")
         # Styles
         f.write("[V4+ Styles]\n")
         f.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, " 
                 "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-        f.write(f"Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1\n")
+        f.write(f"Style: Default,Meiryo,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,2,0,2,15,15,10,1\n")
         f.write("\n")
         # Events
         f.write("[Events]\n")
         f.write("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
         for seg in segments:
-            start = _format_timestamp(seg.start).replace(',', '.')
-            end = _format_timestamp(seg.end).replace(',', '.')
+            start = _format_ass_timestamp(seg.start)
+            end = _format_ass_timestamp(seg.end)
             raw_text = getattr(seg, "text", "") or ""
             text = raw_text.strip().replace("\n", "\\N")
             f.write(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}\n")
@@ -86,7 +94,7 @@ def check_local_file(path):
 
 def download_video(url, output_dir="./", prefix=""):
     """
-    Downloads a video from a URL using yt_dlp and returns the local path.
+    Downloads a video from a URL using yt_dlp and returns the local path and video resolution as (path, width, height).
     Shows progress in Streamlit while downloading.
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -137,14 +145,30 @@ def download_video(url, output_dir="./", prefix=""):
                         ydl_retry.download([url])
                 else:
                     raise
-        return output_path
+        # Get video resolution using ffmpeg.probe
+        try:
+            info = ffmpeg.probe(output_path)
+            vid_stream = next(s for s in info["streams"] if s.get("codec_type") == "video")
+            width = vid_stream.get("width", 0)
+            height = vid_stream.get("height", 0)
+        except Exception:
+            width, height = 0, 0
+        return output_path, width, height
     except KeyError as e:
         # Merge時のKeyErrorをキャッチして単純なbestフォーマットで再試行
         st.warning(f"フォーマット処理中にエラーが発生したため、ベストフォーマットで再試行します: {e}")
         simple_opts = {"outtmpl": output_path, "format": "best", "quiet": True}
         with yt_dlp.YoutubeDL(simple_opts) as ydl_simple:
             ydl_simple.download([url])
-        return output_path
+        # Probe resolution for fallback file
+        try:
+            info = ffmpeg.probe(output_path)
+            vid_stream = next(s for s in info["streams"] if s.get("codec_type") == "video")
+            width = vid_stream.get("width", 0)
+            height = vid_stream.get("height", 0)
+        except Exception:
+            width, height = 0, 0
+        return output_path, width, height
     
     finally:
         progress_bar.empty()
@@ -182,7 +206,7 @@ def process_video(
         # 1. Download or open local
         if is_valid_url(video_input):
             progress_manager.update(5, f"[{prefix}] URLから動画をダウンロード準備中...")
-            video_path = download_video(video_input, prefix=f"{prefix}_")
+            video_path, video_width, video_height = download_video(video_input, prefix=f"{prefix}_")
             downloaded_video_path = video_path
             progress_manager.update(
                 15,

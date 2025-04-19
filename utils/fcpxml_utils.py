@@ -107,6 +107,8 @@ def generate_fcpxml(segments, video_path=None, font_size=65):
         logger.warning(f"Could not determine last segment end time: {e}. Using probed/default duration.")
 
     sequence_duration_frac = to_fractional_time(sequence_duration_s, frame_rate)
+    # Compute vertical margin as 5% of video height
+    margin_v = int(height * 0.05)
     format_id = "r1"
     effect_id = "r2" # Basic Title effect
 
@@ -175,9 +177,15 @@ def generate_fcpxml(segments, video_path=None, font_size=65):
             # Define the text style properties (can be customized)
             SubElement(title, 'text-style-def', id=f"ts{title_count+1}") # Matches ref above
             # Add parameters for Basic Title (font, size, position, etc.) - Example:
-            SubElement(title, 'param', name="Position", key="9999/999166631/999166633/1/100/101", value="0 -450") # Center bottom-ish
+            SubElement(
+                title,
+                'param',
+                name="Position",
+                key="9999/999166631/999166633/1/100/101",
+                value=f"0 -{margin_v}"  # Center bottom-ish with dynamic margin
+            )
             SubElement(title, 'param', name="Alignment", key="9999/999166631/999166633/1/100/100", value="1") # Center align = 1
-            SubElement(title, 'param', name="Font", key="9999/999166631/999166633/5/100/105", value="Helvetica")
+            SubElement(title, 'param', name="Font", key="9999/999166631/999166633/5/100/105", value="Meiryo")
             # Use the provided font_size, ensuring it's an integer string
             final_font_size_str = str(max(10, int(font_size))) # Ensure minimum size 10
             SubElement(title, 'param', name="Size", key="9999/999166631/999166633/5/100/103", value=final_font_size_str)
