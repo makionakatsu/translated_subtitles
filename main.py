@@ -99,19 +99,14 @@ with tab_generate:
             uploaded_paths.append(str(dest))
 
     video_inputs = urls + uploaded_paths
-    # ユーザー指定の左右余白率（％）
-    margin_pct = st.slider("左右余白率 (%)", 0, 20, 2)
-    # Determine default font size based on video width and margin_pct
+    # Determine default font size based on video width
     default_font_size = 50
     if video_inputs:
         first = video_inputs[0]
         try:
             if os.path.isfile(first):
                 w, _ = get_video_resolution(first)
-                left = int(w * margin_pct / 100)
-                right = left
-                available = w - left - right
-                default_font_size = max(10, min(120, int(available * 0.05)))
+                default_font_size = max(10, min(120, int(w * 0.05)))
         except Exception:
             default_font_size = 50
 

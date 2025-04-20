@@ -3,6 +3,39 @@ import logging # Import logging
 # Assuming style_loader might be needed here eventually, but not for current functions
 # from .style_loader import load_styles 
 
+# Utility function to auto-wrap text for ASS subtitles
+def auto_wrap_text(text, max_chars_per_line=40, max_lines=2):
+    """
+    Inserts \N into text to wrap lines at natural breakpoints.
+    Prioritizes full-width punctuation and spaces.
+    """
+    import re
+
+    # Clean text
+    clean_text = text.strip()
+
+    # Break into chunks using punctuation as soft break hints
+    # This splits on Japanese/English punctuation and spaces
+    parts = re.split(r'([。、！？,.!? 　])', clean_text)
+
+    lines = []
+    current_line = ''
+    for part in parts:
+        # Try to append the next part
+        if len(current_line + part) <= max_chars_per_line:
+            current_line += part
+        else:
+            lines.append(current_line.strip())
+            current_line = part
+            # Stop if max_lines reached
+            if len(lines) >= max_lines:
+                break
+
+    if current_line and len(lines) < max_lines:
+        lines.append(current_line.strip())
+
+    return '\\N'.join(lines)
+
 # --- Logging Setup ---
 logger = logging.getLogger(__name__)
 
@@ -31,12 +64,12 @@ def generate_ass_header(width, height, styles_data, chosen_style_name="Default",
         if not chosen_style: # If 'Default' also doesn't exist, create a minimal default
              logger.warning("'Default' style not found. Creating a minimal default style.")
              chosen_style = {
-                 "Fontname": "Arial", "Fontsize": "20", "PrimaryColour": "&H00FFFFFF",
+                 "Fontname": "Meiryo", "Fontsize": "20", "PrimaryColour": "&H00FFFFFF",
                  "SecondaryColour": "&H000000FF", "OutlineColour": "&H00000000", "BackColour": "&H80000000",
                  "Bold": "0", "Italic": "0", "Underline": "0", "StrikeOut": "0",
                  "ScaleX": "100", "ScaleY": "100", "Spacing": "0", "Angle": "0",
                  "BorderStyle": "1", "Outline": "1", "Shadow": "0",
-                 "Alignment": "2", "MarginL": "10", "MarginR": "10", "MarginV": "10", "Encoding": "1"
+                 "Alignment": "2", "MarginL": "10", "MarginR": "10", "MarginV": "10", "Encoding": "128"
              }
              chosen_style_name = "Default" # Ensure name matches
     else:
@@ -64,8 +97,8 @@ def generate_ass_header(width, height, styles_data, chosen_style_name="Default",
     
     # Calculate vertical margin based on video height
     margin_v = int(height * 0.05) # Vertical margin (e.g., 5% of height)
-    # Calculate horizontal margins as 2% of width
-    margin_lr = int(width * 0.02)
+    # Calculate horizontal margins as 5% of width
+    margin_lr = int(width * 0.05)
 
     # Determine BorderStyle based on show_bg flag
     border_style = '3' if show_bg else chosen_style.get('BorderStyle', '1')
@@ -120,6 +153,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+    # NOTE: When writing this header to file, use encoding="utf-8-sig" to avoid Japanese text garbling
     return header
 
 # --- generate_ass_dialogue: WhisperセグメントからASSダイアログ行を生成する ---
@@ -160,9 +194,8 @@ def generate_ass_dialogue(segments, styles_data, style_name="Default", width=128
                 continue # Skip this segment if structure is wrong
 
             # --- Text Preparation for ASS ---
-            # Remove leading/trailing whitespace and replace Python newlines with ASS newlines ('\N')
-            # Let the ASS renderer handle wrapping based on style margins.
-            formatted_text = text.strip().replace('\n', '\\N')
+            # Rely on ASS WrapStyle for automatic wrapping; do not insert forced line breaks.
+            formatted_text = text.strip().replace('\n', ' ')
 
             # --- Get Margins from Style ---
             # Find the chosen style in styles_data, fallback to Default or empty dict
@@ -184,7 +217,7 @@ def generate_ass_dialogue(segments, styles_data, style_name="Default", width=128
             # Create the dialogue line with explicit margins set to 0 (to use style defaults)
             # {\q2} tag removed to rely solely on WrapStyle: 0 and style margins for wrapping.
             # Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-            dialogue = f"Dialogue: 0,{start_time},{end_time},{style_name},,0,0,0,,{formatted_text}\n"
+            dialogue = f"Dialogue: 0,{start_time},{end_time},{style_name},,,,,,{formatted_text}\n"
             dialogue_lines.append(dialogue)
         except Exception as e:
             logger.error(f"Error processing segment for ASS: {segment}. Error: {e}")
