@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Caption MVP</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Local Caption MVP</h1>
+        <p>ローカル動画に字幕を生成・翻訳・編集・焼き込み</p>
+      </div>
+    </header>
+
+    <section class="workflow-strip" aria-label="ワークフロー">
+      <ol class="steps">
+        <li id="stepProject" class="step active">
+          <span>1</span>
+          <div><strong>取り込み</strong><small>動画を読み込む</small></div>
+        </li>
+        <li id="stepTranscribe" class="step">
+          <span>2</span>
+          <div><strong>字幕生成</strong><small>Whisperで作成</small></div>
+        </li>
+        <li id="stepTranslate" class="step">
+          <span>3</span>
+          <div><strong>翻訳</strong><small>Geminiで整える</small></div>
+        </li>
+        <li id="stepEdit" class="step">
+          <span>4</span>
+          <div><strong>確認・編集</strong><small>動画と表で調整</small></div>
+        </li>
+        <li id="stepExport" class="step">
+          <span>5</span>
+          <div><strong>出力</strong><small>SRT/ASS/MP4</small></div>
+        </li>
+      </ol>
+    </section>
+
+    <main class="workbench">
+      <section class="command-bar">
+        <div class="ingest-compact">
+          <label class="file-picker">
+            <input id="fileInput" type="file" accept="video/*,audio/*" />
+            <span id="filePickerLabel">ファイルを選択</span>
+          </label>
+          <input id="localPath" type="text" placeholder="https://... または /Users/.../movie.mp4" />
+          <button id="createProjectBtn">動画を読み込む</button>
+        </div>
+        <button id="generateBtn" class="primary-action" disabled>字幕を作成</button>
+        <div class="export-actions">
+          <button id="renderSubsBtn" disabled>字幕ファイル</button>
+          <button id="renderMp4Btn" disabled>MP4に焼き込み</button>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <section class="preview-pane">
+          <div class="video-shell">
+            <video id="video" controls></video>
+            <div id="captionOverlay" class="caption-overlay"></div>
+          </div>
+          <div class="current-caption">
+            <span>現在の字幕</span>
+            <strong id="currentCaptionText">未選択</strong>
+          </div>
+          <div id="artifactLinks" class="artifact-links"></div>
+        </section>
+
+        <section class="status-panel">
+          <div class="panel-head">
+            <div>
+              <h2>実行状況</h2>
+              <p id="statusText">待機中</p>
+            </div>
+            <span id="stagePill" class="stage-pill idle">待機中</span>
+          </div>
+          <progress id="progress" max="100" value="0"></progress>
+          <div class="stage-grid">
+            <div><span>段階</span><strong id="stageLabel">待機中</strong></div>
+            <div><span>段階進捗</span><strong id="stageProgressText">0%</strong></div>
+            <div><span>チャンク</span><strong id="batchCounter">-</strong></div>
+            <div><span>推定残り</span><strong id="etaText">-</strong></div>
+          </div>
+          <div class="summary-grid">
+            <div><span>字幕</span><strong id="summarySegments">0</strong></div>
+            <div><span>翻訳済み</span><strong id="summaryTranslated">0</strong></div>
+            <div><span>警告</span><strong id="summaryWarnings">0</strong></div>
+          </div>
+          <div id="activityLog" class="activity-log"></div>
+        </section>
+
+        <aside class="controls">
+        <details class="settings-panel">
+          <summary>
+            <span>設定</span>
+            <small id="settingsSummary">速い / 自動 / 翻訳なし</small>
+          </summary>
+          <div class="settings-body">
+            <label>Gemini API Key</label>
+            <input id="apiKey" type="password" placeholder="保存済みキー、またはここに入力" />
+            <div class="secret-controls">
+              <label class="check-row"><input id="apiKeyPersist" type="checkbox" checked /> このMacに保存</label>
+              <button id="clearApiKeyBtn" type="button" class="secondary inline">保存キーを削除</button>
+            </div>
+            <small id="apiKeyStatus" class="settings-note">確認中</small>
+            <div class="row">
+              <label>速度</label>
+              <div>
+                <select id="preset">
+                  <option value="fast">速い</option>
+                  <option value="balanced">標準</option>
+                  <option value="quality">高品質</option>
+                </select>
+                <small id="presetModel" class="settings-note">MLX small</small>
+              </div>
+            </div>
+            <div class="row">
+              <label>ASR</label>
+              <select id="asrEngine">
+                <option value="auto" selected>自動（MLX優先）</option>
+                <option value="mlx">MLX Whisper</option>
+                <option value="faster-whisper">faster-whisper</option>
+              </select>
+            </div>
+            <div class="row">
+              <label>入力言語</label>
+              <select id="sourceLang">
+                <option value="auto">自動</option>
+                <option value="ja">日本語</option>
+                <option value="en">英語</option>
+              </select>
+            </div>
+            <div class="row">
+              <label>翻訳</label>
+              <select id="targetLang">
+                <option value="none">なし</option>
+                <option value="ja" selected>日本語へ</option>
+                <option value="en">英語へ</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <details class="system-panel">
+          <summary>
+            <span>システム状態</span>
+            <small id="systemSummary">確認中</small>
+          </summary>
+          <pre id="preflight"></pre>
+        </details>
+        </aside>
+      </section>
+    </main>
+
+    <section class="table-section">
+      <div class="table-header">
+        <div>
+          <h2>字幕</h2>
+          <p id="tableSummary">0件</p>
+        </div>
+        <div class="table-tools">
+          <select id="segmentFilter">
+            <option value="all">すべて</option>
+            <option value="missing">未翻訳</option>
+            <option value="warnings">警告あり</option>
+            <option value="current">現在時刻周辺</option>
+          </select>
+          <span id="segmentCount">0件</span>
+        </div>
+      </div>
+      <div class="segment-header">
+        <span>#</span>
+        <span>時刻</span>
+        <span>状態</span>
+        <span>原文</span>
+        <span>翻訳</span>
+        <span>表示文</span>
+        <span>操作</span>
+      </div>
+      <div id="segments" class="segments"></div>
+    </section>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

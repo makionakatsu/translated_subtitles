@@ -1,5 +1,6 @@
 .env
 .venv
+.venv.*
 .vscode
 __pycache__/
 *.pyc
@@ -26,6 +27,12 @@ persistent_videos/
 
 # Temporary burn directory
 burn_temp/
+
+# Generated MVP project workspaces
+projects/
+
+# Local model/cache output
+.cache/
 
 # Root level video files
 /*.mp4
