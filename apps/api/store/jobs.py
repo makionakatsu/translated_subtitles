@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from ..models.segment import JobProgress
+from ..models.segment import JobProgress, Segment
 from ..workers.progress import ProgressReporter
 
 JobStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
@@ -28,6 +28,17 @@ class JobRecord:
     error: str | None = None
     outputs: dict[str, Path] = field(default_factory=dict)
     last_progress: JobProgress | None = None
+
+    # Editor-facing artefacts. Populated when run_pipeline finishes; the editor
+    # can then GET / PATCH them while the original ASR result remains available
+    # via ``original_segments`` so the user can revert any single line.
+    segments: list[Segment] = field(default_factory=list)
+    original_segments: list[Segment] = field(default_factory=list)
+    source_language: str | None = None
+    target_language: str | None = None
+    video_path: str | None = None
+    width: int = 1920
+    height: int = 1080
 
     # Async fan-out: every SSE/WS subscriber gets its own queue.
     _subscribers: list[asyncio.Queue[JobProgress | None]] = field(default_factory=list, repr=False)
