@@ -39,6 +39,12 @@ class JobRecord:
     video_path: str | None = None
     width: int = 1920
     height: int = 1080
+    # Per-job ASS style. Initialised from styles.json (selected style) at job
+    # creation; the editor mutates this in real time and the burn / regenerate
+    # endpoints read from here. Keys mirror the ASS [V4+ Styles] field names.
+    style_name: str = "Default"
+    style_overrides: dict[str, str] = field(default_factory=dict)
+    font_size: int = 48
 
     # Async fan-out: every SSE/WS subscriber gets its own queue.
     _subscribers: list[asyncio.Queue[JobProgress | None]] = field(default_factory=list, repr=False)

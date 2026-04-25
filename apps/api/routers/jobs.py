@@ -143,6 +143,8 @@ async def create_job(
             ]
             record.segments = editor_segments
             record.original_segments = list(editor_segments)
+            record.style_name = payload.style_name
+            record.font_size = payload.font_size
         except asyncio.CancelledError:
             record.status = "cancelled"
             raise
