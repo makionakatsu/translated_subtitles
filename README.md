@@ -1,76 +1,51 @@
-# Local Caption MVP
+# 字幕制作スイート (translated_subtitles)
 
-Apple Silicon Macを第一ターゲットにした、ローカル動画向けの字幕生成・翻訳・編集・書き出しツールです。
+AI subtitle generation, translation, and editing — Mac-first.
 
-## 起動
+* **Backend** (`apps/api/`): FastAPI + mlx-whisper (Apple Silicon) / faster-whisper (CI fallback) + Gemini batch translation. SRT / ASS / FCPXML writers, ffmpeg burn-in, SSE progress streaming.
+* **Frontend** (`apps/web/`): Next.js 14 (App Router) + Tailwind. The Aegisub-class three-pane editor (video + waveform + grid) lands in Phase 3; jassub-based ASS preview in Phase 4.
 
-```bash
-python3 -m pip install -r requirements.txt
-python3 main.py
-```
-
-ブラウザで `http://127.0.0.1:8000` を開きます。
-
-## 現在の主経路
-
-1. URL、ローカル絶対パス、またはファイル選択で動画を取り込む
-2. `字幕を生成` でASRを実行する
-3. 入力言語と翻訳先が異なる場合だけGemini翻訳を続けて実行する
-4. 動画プレビューと字幕表で確認・編集する
-5. ASS/SRT/VTT/二言語ASS、または焼き込みMP4を書き出す
-
-## ASR
-
-- 既定は `auto` です。
-- Apple Silicon macOSで `mlx-whisper` が使える場合はMLXを選びます。
-- MLXが使えない環境では `faster-whisper` にfallbackします。
-
-プリセット:
-
-- `fast`: `mlx-community/whisper-small-mlx`
-- `balanced`: `mlx-community/whisper-medium-mlx`
-- `quality`: `mlx-community/whisper-large-v3-mlx`
-
-モデルは以下の環境変数で上書きできます。
+## Quick start
 
 ```bash
-MLX_WHISPER_MODEL_FAST=...
-MLX_WHISPER_MODEL_BALANCED=...
-MLX_WHISPER_MODEL_QUALITY=...
+# Backend
+uv sync --extra mac --extra dev          # use --extra cpu on Linux/CI
+uv run uvicorn apps.api.main:app --reload --port 8000
+
+# Frontend
+cd apps/web
+pnpm install
+pnpm dev                                 # http://localhost:3000
 ```
 
-## 翻訳
+Set `GEMINI_API_KEY` in the environment (or a `.env` at the repo root) to enable translation.
 
-- 既定の翻訳先は日本語です。
-- Gemini APIキーは `GEMINI_API_KEY`、またはUIの保存操作で設定します。
-- UI保存時は可能ならmacOS Keychain、使えない場合はローカル設定ファイルに保存します。
-- `project.json` にはAPIキーや全文promptを保存しません。
-- Gemini失敗時はArgos Translate、さらに失敗した場合は元文維持とwarningにfallbackします。
+## API
 
-## Preflight
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/jobs` | Start a transcribe/translate/write job. Body: `{source, target_lang?, formats[], model, ...}` |
+| `GET` | `/api/jobs/{id}` | Job status |
+| `GET` | `/api/jobs/{id}/outputs/{fmt}` | Download a generated file |
+| `POST` | `/api/jobs/{id}/cancel` | Cancel a running job |
+| `GET` | `/sse/jobs/{id}` | Stream `JobProgress` events as Server-Sent Events |
+| `GET` | `/api/styles` | List bundled ASS styles |
 
-UI右側の「システム状態」は自動実行されます。手動確認する場合:
+## Tests
 
 ```bash
-curl -s http://127.0.0.1:8000/api/preflight | python3 -m json.tool
+uv run pytest                 # full suite, snapshot pinned
+uv run pytest --update-snapshots
+uv run ruff check .
+uv run mypy apps/api
 ```
 
-確認対象:
+## Roadmap
 
-- Python実行ファイルとバージョン
-- Apple Silicon判定
-- `ffmpeg` / `ffprobe`
-- `mlx` / `mlx_whisper`
-- ASRエンジン選択結果
-- Gemini APIキー
-- subtitle render filter
-- 壊れた `.venv`
-
-## テスト
-
-```bash
-python3 -m compileall main.py app tests
-python3 -m pytest -q
-```
-
-実動画のMLX ASRはモデルダウンロードを伴うため、自動テストではbackend選択とfallbackをフェイクで検証しています。
+1. **P0** ✅ monorepo, CI, snapshot freeze
+2. **P1** ✅ mlx-whisper backend, FasterWhisper CI fallback, hallucination tuning
+3. **P2** ✅ Gemini-only batch translation with context window + glossary
+4. **P3** Editor UI: video + wavesurfer waveform + TanStack Table grid + hotkeys + Undo/Redo
+5. **P4** jassub WASM ASS preview + StyleForm + font upload
+6. **P5** Burn-in / Export pipeline + JobDock UI
+7. **P6** Tauri wrap for macOS bundle distribution
