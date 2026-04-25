@@ -37,6 +37,6 @@ app.include_router(sse.router)
 app.include_router(styles.router)
 
 
-@app.get("/health")
+@app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
