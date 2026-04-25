@@ -1,6 +1,5 @@
 .env
 .venv
-.venv.*
 .vscode
 __pycache__/
 *.pyc
@@ -8,10 +7,8 @@ __pycache__/
 # Log files
 process_log.log
 
-# Generated subtitle files
-*.srt
-*.ass
-*.fcpxml
+# Generated subtitle outputs (kept loose during dev; output dir is gitignored)
+generated_subs/
 
 # Temporary upload directory
 temp_uploads/
@@ -28,11 +25,29 @@ persistent_videos/
 # Temporary burn directory
 burn_temp/
 
-# Generated MVP project workspaces
-projects/
-
-# Local model/cache output
-.cache/
-
 # Root level video files
 /*.mp4
+
+# uv / build
+.uv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Web
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/next-env.d.ts
+apps/web/*.tsbuildinfo
+# JASSUB worker/wasm assets are copied from node_modules by
+# scripts/copy-jassub.mjs at predev / prebuild time; no need to commit them.
+apps/web/public/jassub/
+
+# Runtime data dir (apps/api persistence)
+.subtitletool/
+
+uploads/

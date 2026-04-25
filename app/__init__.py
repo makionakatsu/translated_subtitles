@@ -1,1 +1,0 @@
-"""Local captioning web app."""
