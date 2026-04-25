@@ -32,7 +32,7 @@ jobs:
         run: uv run pytest -ra
 
   web:
-    name: Web (typecheck + lint)
+    name: Web (typecheck + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -42,11 +42,11 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
 
@@ -56,5 +56,5 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Lint
-        run: pnpm lint || true # eslint flat config not yet authored; soft-fail in P0
+      - name: Build
+        run: pnpm build

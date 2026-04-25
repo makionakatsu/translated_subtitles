@@ -1,18 +1,17 @@
+import { NewJobForm } from "@/components/NewJobForm";
+import { JobDock } from "@/components/JobDock";
+
 export default function Home() {
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center gap-4 p-8">
-      <h1 className="text-3xl font-semibold">字幕制作スイート</h1>
-      <p className="text-muted">
-        Phase 0 skeleton — editor UI lands in Phase 3.
-      </p>
-      <a
-        href="http://localhost:8000/health"
-        className="text-accent underline underline-offset-4"
-        target="_blank"
-        rel="noreferrer"
-      >
-        API health endpoint →
-      </a>
+    <main className="min-h-dvh px-6 py-10 max-w-3xl mx-auto">
+      <header className="mb-8 space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">字幕制作スイート</h1>
+        <p className="text-sm text-muted">
+          Apple Silicon の mlx-whisper と Gemini で、字幕を生成・翻訳・編集します。
+        </p>
+      </header>
+      <NewJobForm />
+      <JobDock />
     </main>
   );
 }

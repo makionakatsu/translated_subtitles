@@ -12,6 +12,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..backends.base import TranscribeOptions, select_backend
+from ..models.segment import Segment as SegmentOut
+from ..services.media_service import get_video_resolution
 from ..services.transcribe_service import (
     OutputFormat,
     TranscribeRequest,
@@ -119,6 +121,28 @@ async def create_job(
             )
             record.status = "completed"
             record.outputs = {fmt: path for fmt, path in result.outputs.items()}
+            record.source_language = result.info.language
+            record.target_language = payload.target_lang
+            record.video_path = str(result.video_path) if result.video_path else None
+            if result.video_path is not None:
+                w, h = get_video_resolution(result.video_path)
+                record.width = w or 1920
+                record.height = h or 1080
+            # Snapshot the AI segments into editor-facing pydantic models.
+            editor_segments = [
+                SegmentOut(
+                    id=i,
+                    start=seg.start,
+                    end=seg.end,
+                    text=seg.text,
+                    original_text=seg.text,
+                    speaker=seg.speaker,
+                    avg_logprob=seg.avg_logprob,
+                )
+                for i, seg in enumerate(result.segments)
+            ]
+            record.segments = editor_segments
+            record.original_segments = list(editor_segments)
         except asyncio.CancelledError:
             record.status = "cancelled"
             raise
@@ -170,6 +194,20 @@ async def download_output(
     if path is None or not Path(path).exists():
         raise HTTPException(404, f"Output {fmt} not available")
     return FileResponse(path, filename=Path(path).name)
+
+
+@router.get("/{job_id}/media")
+async def stream_media(
+    job_id: str,
+    store: JobStore = Depends(get_store),
+) -> FileResponse:
+    """Stream the source video so the editor's <video> can play it."""
+    record = store.get(job_id)
+    if record is None:
+        raise HTTPException(404, "Unknown job id")
+    if not record.video_path or not Path(record.video_path).exists():
+        raise HTTPException(404, "Source media not available")
+    return FileResponse(record.video_path, filename=Path(record.video_path).name)
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
