@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .routers import jobs, segments, sse, styles
+from .routers import jobs, segments, sse, style_overrides, styles
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(jobs.router)
 app.include_router(segments.router)
+app.include_router(style_overrides.router)
 app.include_router(sse.router)
 app.include_router(styles.router)
 

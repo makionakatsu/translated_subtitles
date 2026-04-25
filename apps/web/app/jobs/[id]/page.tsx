@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useEditorStore } from "@/stores/editor";
-import { api, downloadUrl } from "@/lib/api";
+import { api } from "@/lib/api";
 import { fromKeyboardEvent, isTypingTarget } from "@/lib/hotkeys";
 import { TopBar } from "@/components/TopBar";
 import { VideoPane } from "@/components/VideoPane";
@@ -11,6 +11,10 @@ import { Waveform } from "@/components/Waveform";
 import { SubtitleGrid } from "@/components/SubtitleGrid";
 import { Inspector } from "@/components/Inspector";
 import { JobDock } from "@/components/JobDock";
+import { AssOverlay } from "@/components/AssOverlay";
+import { StyleForm } from "@/components/StyleForm";
+
+type InspectorTab = "segment" | "style";
 
 export default function EditorPage() {
   const params = useParams<{ id: string }>();
@@ -24,8 +28,9 @@ export default function EditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [outputs, setOutputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  // The /api/jobs/:id/media endpoint streams whatever yt-dlp / the user's
-  // local file lands on. The HTML5 video can fetch it directly.
+  const [tab, setTab] = useState<InspectorTab>("segment");
+  const [assContent, setAssContent] = useState<string>("");
+
   const videoUrl = `/api/jobs/${jobId}/media`;
 
   // ── Initial load ──────────────────────────────────────────────────────────
@@ -55,7 +60,32 @@ export default function EditorPage() {
     };
   }, [jobId, hydrate]);
 
-  // ── Auto-save: PATCH dirty edits 800ms after the user stops typing ────────
+  // ── Keep ASS preview in sync with segments / style ───────────────────────
+  // Refresh whenever segments change. Style changes flow back via the
+  // `refreshAss()` callback passed to <StyleForm>. A small 120ms debounce
+  // avoids bombarding the server while the user types in the grid.
+  const fetchAss = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/jobs/${jobId}/ass`);
+      if (!r.ok) return;
+      const text = await r.text();
+      setAssContent(text);
+    } catch {
+      /* ignore preview hiccups */
+    }
+  }, [jobId]);
+
+  const assRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (segments.length === 0) return;
+    if (assRefreshTimer.current) clearTimeout(assRefreshTimer.current);
+    assRefreshTimer.current = setTimeout(fetchAss, 120);
+    return () => {
+      if (assRefreshTimer.current) clearTimeout(assRefreshTimer.current);
+    };
+  }, [segments, fetchAss]);
+
+  // ── Auto-save: PATCH dirty edits 800ms after last edit ───────────────────
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (dirty.size === 0) return;
@@ -90,7 +120,6 @@ export default function EditorPage() {
       const typing = isTypingTarget(e.target);
       const store = useEditorStore.getState();
 
-      // Globals: undo/redo work even while typing.
       if (hk.mod && hk.key === "z" && !hk.shift) {
         e.preventDefault();
         useEditorStore.temporal.getState().undo();
@@ -222,9 +251,39 @@ export default function EditorPage() {
       ) : null}
 
       <div className="grid flex-1 min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_320px]">
-        <VideoPane src={videoUrl} className="border-r border-white/5" />
+        <VideoPane
+          src={videoUrl}
+          className="border-r border-white/5"
+          overlay={(videoEl) => (
+            <AssOverlay videoEl={videoEl} assContent={assContent} />
+          )}
+        />
         <SubtitleGrid className="border-r border-white/5" />
-        <Inspector className="border-l border-white/5" />
+        <aside className="flex flex-col border-l border-white/5 min-h-0">
+          <div className="grid grid-cols-2 text-xs border-b border-white/10">
+            <button
+              onClick={() => setTab("segment")}
+              className={`py-2 ${tab === "segment" ? "bg-white/10 text-fg" : "text-muted"}`}
+            >
+              セグメント
+            </button>
+            <button
+              onClick={() => setTab("style")}
+              className={`py-2 ${tab === "style" ? "bg-white/10 text-fg" : "text-muted"}`}
+            >
+              スタイル
+            </button>
+          </div>
+          {tab === "segment" ? (
+            <Inspector className="flex-1 min-h-0" />
+          ) : (
+            <StyleForm
+              jobId={jobId}
+              onChange={fetchAss}
+              className="flex-1 min-h-0"
+            />
+          )}
+        </aside>
       </div>
       <Waveform audioUrl={videoUrl} className="h-32 border-t border-white/10" />
 

@@ -157,6 +157,10 @@ async def regenerate_outputs(
         raise HTTPException(400, "No segments to write")
 
     fresh: dict[str, str] = {}
+    styles = load_styles()
+    base = styles.get(record.style_name, next(iter(styles.values()), {}))
+    merged_styles = {record.style_name: {**base, **record.style_overrides}}
+
     for fmt, path in record.outputs.items():
         from pathlib import Path
 
@@ -169,7 +173,9 @@ async def regenerate_outputs(
                 out_path,
                 width=record.width,
                 height=record.height,
-                styles_data=load_styles(),
+                styles_data=merged_styles,
+                style_name=record.style_name,
+                font_size=record.font_size,
             )
         elif fmt == "fcpxml":
             write_fcpxml(
@@ -177,6 +183,7 @@ async def regenerate_outputs(
                 out_path,
                 width=record.width,
                 height=record.height,
+                font_size=record.font_size,
             )
         fresh[fmt] = str(out_path)
     return fresh

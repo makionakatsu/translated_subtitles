@@ -43,6 +43,9 @@ apps/web/.next/
 apps/web/out/
 apps/web/next-env.d.ts
 apps/web/*.tsbuildinfo
+# JASSUB worker/wasm assets are copied from node_modules by
+# scripts/copy-jassub.mjs at predev / prebuild time; no need to commit them.
+apps/web/public/jassub/
 
 # Runtime data dir (apps/api persistence)
 .subtitletool/
