@@ -7,10 +7,8 @@ __pycache__/
 # Log files
 process_log.log
 
-# Generated subtitle files
-*.srt
-*.ass
-*.fcpxml
+# Generated subtitle outputs (kept loose during dev; output dir is gitignored)
+generated_subs/
 
 # Temporary upload directory
 temp_uploads/
@@ -49,6 +47,4 @@ apps/web/*.tsbuildinfo
 # Runtime data dir (apps/api persistence)
 .subtitletool/
 
-# Generated subs output dir
-generated_subs/
 uploads/

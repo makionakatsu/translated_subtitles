@@ -1,8 +1,4 @@
-"""ASGI entrypoint for the subtitle suite FastAPI backend.
-
-Phase 0: skeleton with health endpoint and CORS for the Next.js dev server.
-Routers (jobs, segments, styles, sse) are wired in subsequent phases.
-"""
+"""ASGI entrypoint for the subtitle suite FastAPI backend."""
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -12,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
+from .routers import jobs, sse, styles
 
 
 @asynccontextmanager
@@ -31,6 +28,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(jobs.router)
+app.include_router(sse.router)
+app.include_router(styles.router)
 
 
 @app.get("/health")

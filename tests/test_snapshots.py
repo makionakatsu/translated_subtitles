@@ -1,21 +1,10 @@
-"""Phase 0 snapshot tests.
+"""Snapshot tests for the canonical subtitle writers.
 
-These freeze the *current* output of the existing subtitle writers so the
-upcoming refactor (Streamlit removal, mlx-whisper migration, Gemini-only
-translation) cannot silently change the bytes that downstream tools depend on.
+Pin the byte-for-byte output of :mod:`apps.api.services.subtitle_service` so
+the upcoming editor and translation work cannot silently regress the file
+formats downstream tools (Final Cut Pro, ffmpeg, browser players) consume.
 
-Two output paths are pinned:
-
-1. ``utils.processing._write_srt`` / ``_write_ass`` — the inline writers used
-   today by ``processing.process_video``. These are scheduled for removal in
-   later phases; pinning them now makes the diff explicit.
-2. ``utils.srt_utils.generate_srt_content`` and
-   ``utils.ass_utils.generate_ass_header`` — the alternative writers we plan to
-   keep and reuse from ``apps/api/services/subtitle_service.py``.
-
-We use plain string equality against checked-in ``.snap`` files so pytest can
-run without the ``syrupy`` dependency on minimal CI images. Update snapshots by
-running ``pytest --update-snapshots``.
+Update with ``pytest --update-snapshots``.
 """
 from __future__ import annotations
 
@@ -23,10 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from utils.ass_utils import generate_ass_header
-from utils.processing import _write_ass, _write_srt
-from utils.srt_utils import format_srt_time, generate_srt_content
-from utils.style_loader import load_styles
+from apps.api.services import style_service
+from apps.api.services.subtitle_service import (
+    format_srt_time,
+    render_ass_header,
+    write_ass,
+    write_fcpxml,
+    write_srt,
+)
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots"
 
@@ -37,10 +30,6 @@ def _read_or_write(path: Path, value: str, update: bool) -> str:
         path.write_text(value, encoding="utf-8")
         return value
     return path.read_text(encoding="utf-8")
-
-
-def pytest_addoption_compat(request: pytest.FixtureRequest) -> bool:
-    return bool(request.config.getoption("--update-snapshots", default=False))
 
 
 @pytest.fixture
@@ -57,46 +46,63 @@ def test_format_srt_time_round_trips() -> None:
     assert format_srt_time(3600.001) == "01:00:00,001"
 
 
-def test_processing_write_srt_snapshot(
-    sample_segments, tmp_path: Path, update_snapshots: bool
-) -> None:
+def test_write_srt_snapshot(sample_segments, tmp_path: Path, update_snapshots: bool) -> None:
     out = tmp_path / "out.srt"
-    _write_srt(sample_segments, out)
+    write_srt(sample_segments, out)
     actual = out.read_text(encoding="utf-8")
-    expected = _read_or_write(SNAPSHOT_DIR / "processing_write_srt.snap", actual, update_snapshots)
+    expected = _read_or_write(SNAPSHOT_DIR / "subtitle_service_srt.snap", actual, update_snapshots)
     assert actual == expected
 
 
-def test_processing_write_ass_snapshot(
-    sample_segments, tmp_path: Path, update_snapshots: bool
-) -> None:
+def test_write_ass_snapshot(sample_segments, tmp_path: Path, update_snapshots: bool) -> None:
+    styles = style_service.load_styles()
     out = tmp_path / "out.ass"
-    _write_ass(sample_segments, out, font_size=48)
-    actual = out.read_text(encoding="utf-8")
-    expected = _read_or_write(SNAPSHOT_DIR / "processing_write_ass.snap", actual, update_snapshots)
-    assert actual == expected
-
-
-def test_srt_utils_generate_srt_content_snapshot(
-    sample_segments, update_snapshots: bool
-) -> None:
-    actual = generate_srt_content(sample_segments, width=1920, font_size=48)
-    expected = _read_or_write(
-        SNAPSHOT_DIR / "srt_utils_generate.snap", actual, update_snapshots
-    )
-    assert actual == expected
-
-
-def test_ass_utils_header_snapshot(update_snapshots: bool) -> None:
-    styles = load_styles()
-    actual = generate_ass_header(
+    write_ass(
+        sample_segments,
+        out,
         width=1920,
         height=1080,
         styles_data=styles,
-        chosen_style_name="Yu Gothic UI",
+        style_name="Yu Gothic UI",
+        font_size=48,
+    )
+    actual = out.read_text(encoding="utf-8")
+    expected = _read_or_write(SNAPSHOT_DIR / "subtitle_service_ass.snap", actual, update_snapshots)
+    assert actual == expected
+
+
+def test_render_ass_header_snapshot(update_snapshots: bool) -> None:
+    styles = style_service.load_styles()
+    actual = render_ass_header(
+        width=1920,
+        height=1080,
+        styles_data=styles,
+        style_name="Yu Gothic UI",
         font_size=48,
     )
     expected = _read_or_write(
-        SNAPSHOT_DIR / "ass_utils_header.snap", actual, update_snapshots
+        SNAPSHOT_DIR / "subtitle_service_ass_header.snap", actual, update_snapshots
     )
     assert actual == expected
+
+
+def test_write_fcpxml_snapshot(sample_segments, tmp_path: Path, update_snapshots: bool) -> None:
+    out = tmp_path / "out.fcpxml"
+    write_fcpxml(
+        sample_segments,
+        out,
+        width=1920,
+        height=1080,
+        frame_rate=24.0,
+        duration_sec=4000.0,
+        font_size=48,
+    )
+    actual = out.read_text(encoding="utf-8")
+    # FCPXML embeds a generation timestamp; strip the comment for snapshotting.
+    import re
+
+    actual_normalised = re.sub(r"<!-- Generated.*? -->", "<!-- Generated -->", actual)
+    expected = _read_or_write(
+        SNAPSHOT_DIR / "subtitle_service_fcpxml.snap", actual_normalised, update_snapshots
+    )
+    assert actual_normalised == expected
