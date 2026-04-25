@@ -29,3 +29,26 @@ burn_temp/
 
 # Root level video files
 /*.mp4
+
+# uv / build
+.uv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Web
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/next-env.d.ts
+apps/web/*.tsbuildinfo
+
+# Runtime data dir (apps/api persistence)
+.subtitletool/
+
+# Generated subs output dir
+generated_subs/
+uploads/

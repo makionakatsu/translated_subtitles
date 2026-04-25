@@ -5,7 +5,7 @@ import logging # Import logging
 
 # Utility function to auto-wrap text for ASS subtitles
 def auto_wrap_text(text, max_chars_per_line=40, max_lines=2):
-    """
+    r"""
     Inserts \N into text to wrap lines at natural breakpoints.
     Prioritizes full-width punctuation and spaces.
     """
