@@ -1,8 +1,9 @@
-"""Shared pytest fixtures.
+"""Shared pytest fixtures and lightweight stubs.
 
-We stub the heavy / Mac-incompatible imports so snapshot tests run on a minimal
-Python environment (CI Linux, no streamlit / torch / faster-whisper). Only the
-pure subtitle-format writers are exercised here.
+CI Linux runs without the Apple-Silicon-only ``mlx-whisper`` package and
+without the heavyweight ``faster-whisper`` model files. Optional native deps
+(``ffmpeg-python``, ``yt-dlp``) are also stubbed so unit tests stay hermetic.
+Real integration tests live in a separate suite (Phase 6+).
 """
 from __future__ import annotations
 
@@ -17,7 +18,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 
-# ── Stub heavy imports BEFORE utils/* gets imported ─────────────────────────
 def _install_stub(name: str, attrs: dict[str, object] | None = None) -> None:
     if name in sys.modules:
         return
@@ -27,39 +27,42 @@ def _install_stub(name: str, attrs: dict[str, object] | None = None) -> None:
     sys.modules[name] = mod
 
 
-class _StreamlitStub:
-    def __getattr__(self, item: str):
-        def _noop(*a, **kw):
-            class _Empty:
-                def progress(self, *a, **kw):
-                    return None
+_install_stub(
+    "ffmpeg",
+    {"probe": lambda *_a, **_kw: {"streams": [], "format": {}}, "Error": Exception},
+)
+_install_stub(
+    "yt_dlp",
+    {
+        "YoutubeDL": object,
+        "utils": types.SimpleNamespace(DownloadError=Exception),
+    },
+)
+_install_stub(
+    "mlx_whisper",
+    {"transcribe": lambda *_a, **_kw: {"segments": [], "language": "en"}},
+)
+_install_stub("faster_whisper", {"WhisperModel": object})
 
-                def text(self, *a, **kw):
-                    return None
-
-                def empty(self):
-                    return None
-
-            return _Empty()
-
-        return _noop
-
-
-sys.modules.setdefault("streamlit", _StreamlitStub())  # type: ignore[arg-type]
-_install_stub("ffmpeg", {"probe": lambda *a, **kw: {"streams": [], "format": {}}, "Error": Exception})
-_install_stub("yt_dlp", {"YoutubeDL": object, "utils": types.SimpleNamespace(DownloadError=Exception)})
-_install_stub("deepl", {"Translator": object, "QuotaExceededException": Exception, "DeepLException": Exception})
-
-# google.generativeai
+# google.generativeai is patched per-test in test_translate_service.py; here we
+# just install enough so importing apps.api.services.translate_service works.
 google_pkg = types.ModuleType("google")
 genai_mod = types.ModuleType("google.generativeai")
-genai_mod.configure = lambda **kw: None  # type: ignore[attr-defined]
-genai_mod.GenerativeModel = object  # type: ignore[attr-defined]
+genai_mod.configure = lambda **_kw: None  # type: ignore[attr-defined]
+
+
+class _StubModel:
+    def __init__(self, *_a, **_kw) -> None:
+        self._responses: list[object] = []
+
+    def generate_content(self, *_a, **_kw):  # type: ignore[no-untyped-def]
+        return types.SimpleNamespace(text='{"translations": []}', candidates=[])
+
+
+genai_mod.GenerativeModel = _StubModel  # type: ignore[attr-defined]
 google_pkg.generativeai = genai_mod  # type: ignore[attr-defined]
 sys.modules.setdefault("google", google_pkg)
 sys.modules.setdefault("google.generativeai", genai_mod)
-
-_install_stub("faster_whisper", {"WhisperModel": object})
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
