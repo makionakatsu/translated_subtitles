@@ -53,6 +53,12 @@ export const api = {
       method: "POST",
     }),
 
+  burn: (id: string, sourceFormat?: string) =>
+    request<{ status: string }>(`/api/jobs/${id}/burn`, {
+      method: "POST",
+      body: JSON.stringify({ source_format: sourceFormat ?? null }),
+    }),
+
   styles: () => request<Record<string, Record<string, string>>>("/api/styles"),
 };
 

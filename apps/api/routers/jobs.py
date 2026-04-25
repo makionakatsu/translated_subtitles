@@ -152,8 +152,9 @@ async def create_job(
             logger.exception("Job %s failed", record.id)
             record.status = "failed"
             record.error = str(e)
-        finally:
-            record.close()
+        # NOTE: we intentionally do NOT call ``record.close()`` here. The same
+        # SSE stream is re-used by post-pipeline actions (burn-in, regenerate)
+        # so subscribers stay attached until the client disconnects.
 
     task = asyncio.create_task(_run())
     store.attach(record.id, task)

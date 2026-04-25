@@ -28,6 +28,7 @@ export default function EditorPage() {
   const [error, setError] = useState<string | null>(null);
   const [outputs, setOutputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [burning, setBurning] = useState(false);
   const [tab, setTab] = useState<InspectorTab>("segment");
   const [assContent, setAssContent] = useState<string>("");
 
@@ -233,6 +234,36 @@ export default function EditorPage() {
     }
   };
 
+  const handleBurn = async () => {
+    if (burning) return;
+    setBurning(true);
+    setError(null);
+    try {
+      // Persist any pending edits before kicking off the long-running burn.
+      if (dirty.size > 0) await handleSave();
+      await api.regenerateOutputs(jobId).then(setOutputs).catch(() => {});
+      await api.burn(jobId);
+      // Poll for the burned output. JobDock SSE will surface progress live.
+      const start = Date.now();
+      while (Date.now() - start < 600_000) {
+        const job = await api.getJob(jobId);
+        if (job.outputs.burned) {
+          setOutputs(job.outputs);
+          break;
+        }
+        if (job.error) {
+          setError(job.error);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBurning(false);
+    }
+  };
+
   const formats = useMemo(() => Object.keys(outputs), [outputs]);
 
   return (
@@ -241,7 +272,9 @@ export default function EditorPage() {
         saving={saving}
         onSave={handleSave}
         onExportRebuild={handleRebuild}
+        onBurn={handleBurn}
         formats={formats}
+        burning={burning}
       />
 
       {error ? (
