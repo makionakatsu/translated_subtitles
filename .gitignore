@@ -28,6 +28,24 @@ burn_temp/
 # Root level video files
 /*.mp4
 
+# Video files at any depth. Git ignore patterns are case-sensitive, so spell
+# out letter case; .ts remains available for TypeScript source files.
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[mM][kK][vV]
+*.[aA][vV][iI]
+*.[wW][eE][bB][mM]
+*.[mM]4[vV]
+*.[wW][mM][vV]
+*.[fF][lL][vV]
+*.[mM][pP][eE][gG]
+*.[mM][pP][gG]
+*.[mM][tT][sS]
+*.[mM]2[tT][sS]
+*.[oO][gG][vV]
+*.3[gG][pP]
+*.[vV][oO][bB]
+
 # uv / build
 .uv/
 build/
