@@ -1,0 +1,17 @@
+name: Video history
+
+on: [push, pull_request]
+
+jobs:
+  video-history:
+    name: Video history check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check every reachable commit
+        run: python3 scripts/check_video_history.py
+      - name: Test video history guard
+        run: python3 -m unittest discover -s tests -p test_video_history.py
