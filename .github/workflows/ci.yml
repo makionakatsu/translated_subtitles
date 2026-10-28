@@ -25,11 +25,11 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
-      - name: Mypy (apps/api only)
-        run: uv run mypy apps/api
-
       - name: Pytest (snapshot tests)
         run: uv run pytest -ra
+
+      - name: Mypy (apps/api only)
+        run: uv run mypy apps/api
 
   web:
     name: Web (typecheck + build)
@@ -58,3 +58,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Install Chromium for browser regression test
+        run: pnpm exec playwright install chromium
+
+      - name: Test video editor
+        run: pnpm exec playwright test --config=playwright.config.mjs
