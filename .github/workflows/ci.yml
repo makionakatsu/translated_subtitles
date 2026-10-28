@@ -25,11 +25,11 @@ jobs:
       - name: Ruff
         run: uv run ruff check .
 
-      - name: Mypy (apps/api only)
-        run: uv run mypy apps/api
-
       - name: Pytest (snapshot tests)
         run: uv run pytest -ra
+
+      - name: Mypy (apps/api only)
+        run: uv run mypy apps/api
 
   web:
     name: Web (typecheck + build)
