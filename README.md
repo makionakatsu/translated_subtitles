@@ -20,6 +20,10 @@ pnpm dev                                 # http://localhost:3000
 
 Set `GEMINI_API_KEY` in the environment (or a `.env` at the repo root) to enable translation.
 
+非 WAV 素材の音声変換は最大 10 分で停止します。変換に失敗した場合、既存の出力ファイルは保持します。
+Unix 系では変換後の WAV を作成ユーザーのみ読み書き可能な一時ファイルから置換します。
+WAV を直接処理するバックエンドやメディアの事前解析には、この時間制限は適用されません。
+
 ## API
 
 | Method | Path | Description |
