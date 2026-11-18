@@ -41,10 +41,12 @@ dependencies = [
 mac = [
     # Apple Silicon native (default backend)
     "mlx-whisper>=0.4",
+    "filelock>=4.2.1,<5",
 ]
 cpu = [
     # CI / Linux fallback only
     "faster-whisper>=1.1",
+    "filelock>=4.2.1,<5",
 ]
 dev = [
     "pytest>=8.3",
