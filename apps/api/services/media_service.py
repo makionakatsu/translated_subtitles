@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def is_valid_url(value: str) -> bool:
 def get_video_resolution(input_path: str | Path) -> tuple[int, int]:
     """Return ``(width, height)`` or ``(0, 0)`` on failure."""
     try:
-        import ffmpeg  # type: ignore[import-not-found]
+        import ffmpeg
 
         info = ffmpeg.probe(str(input_path))
         for stream in info.get("streams", []):
@@ -47,7 +48,7 @@ def get_video_resolution(input_path: str | Path) -> tuple[int, int]:
 def get_video_metadata(input_path: str | Path) -> dict[str, float | int | str]:
     """Return a coarse media metadata dict; missing fields default to ``0``/``""``."""
     try:
-        import ffmpeg  # type: ignore[import-not-found]
+        import ffmpeg
 
         info = ffmpeg.probe(str(input_path))
     except Exception as e:
@@ -121,7 +122,7 @@ def download_video(
     on_progress: ProgressCallback | None = None,
 ) -> Path:
     """Download a video via yt-dlp. Returns the saved file path."""
-    import yt_dlp  # type: ignore[import-not-found]
+    import yt_dlp
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out_template = str(output_dir / f"{prefix}%(id)s.%(ext)s")
@@ -144,7 +145,8 @@ def download_video(
         def _hook(d: dict[str, object]) -> None:
             status = d.get("status")
             if status == "downloading":
-                pct_str = (d.get("_percent_str") or "").strip().rstrip("%") if isinstance(d.get("_percent_str"), str) else ""
+                raw_pct = d.get("_percent_str")
+                pct_str = raw_pct.strip().rstrip("%") if isinstance(raw_pct, str) else ""
                 try:
                     pct = float(pct_str)
                 except ValueError:
@@ -159,9 +161,9 @@ def download_video(
 
     info_dict: dict[str, object] | None = None
 
-    def _run(opts: dict[str, object]) -> dict[str, object]:
+    def _run(opts: dict[str, object]) -> dict[str, object] | None:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            return ydl.extract_info(url, download=True)
+            return cast("dict[str, object] | None", ydl.extract_info(url, download=True))
 
     try:
         info_dict = _run(ydl_opts)

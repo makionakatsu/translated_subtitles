@@ -106,3 +106,11 @@ def test_translation_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert resp.status_code == 400
     assert "GEMINI_API_KEY" in resp.json()["detail"]
+
+
+def test_default_formats_are_srt_and_independent_between_requests() -> None:
+    first = jobs_router.TranscribeJobIn(source="first.mp4")
+    second = jobs_router.TranscribeJobIn(source="second.mp4")
+    assert first.formats == ["srt"]
+    first.formats.append("ass")
+    assert second.formats == ["srt"]

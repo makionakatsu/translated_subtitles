@@ -94,6 +94,11 @@ strict = true
 ignore_missing_imports = true
 exclude = ["apps/web", "packages", "build"]
 
+[[tool.mypy.overrides]]
+# The legacy SDK publicly re-exports its API without explicit aliases.
+module = "google.generativeai"
+implicit_reexport = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
