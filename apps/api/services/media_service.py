@@ -8,8 +8,10 @@ SSE/WebSocket subscribers.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -18,6 +20,7 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[float, str], None]
+_CONVERT_TIMEOUT_SECONDS = 600.0
 
 
 class MediaError(RuntimeError):
@@ -89,6 +92,12 @@ def convert_to_wav(input_path: str | Path, output_path: str | Path) -> Path:
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    source = Path(input_path)
+    if source.exists() and output_path.exists() and source.samefile(output_path):
+        raise MediaError("input and output must be different files")
+    fd, temporary_name = tempfile.mkstemp(prefix=".audio-convert-", suffix=".wav", dir=output_path.parent)
+    os.close(fd)
+    temporary = Path(temporary_name)
 
     cmd = [
         "ffmpeg",
@@ -101,16 +110,19 @@ def convert_to_wav(input_path: str | Path, output_path: str | Path) -> Path:
         "16000",
         "-ac",
         "1",
-        str(output_path),
+        str(temporary),
         "-y",
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=_CONVERT_TIMEOUT_SECONDS)
+        os.replace(temporary, output_path)
+    except subprocess.TimeoutExpired as e:
+        raise MediaError(f"ffmpeg timed out converting to wav after {e.timeout}s") from e
     except subprocess.CalledProcessError as e:
-        if output_path.exists():
-            output_path.unlink(missing_ok=True)
         stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
         raise MediaError(f"ffmpeg failed converting to wav: {stderr}") from e
+    finally:
+        temporary.unlink(missing_ok=True)
     return output_path
 
 
