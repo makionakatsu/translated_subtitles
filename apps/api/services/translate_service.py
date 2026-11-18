@@ -213,15 +213,14 @@ class GeminiTranslator:
         outputs: list[str] = []
         for cand in getattr(response, "candidates", []) or []:
             try:
-                parts = cand.content.parts  # type: ignore[attr-defined]
+                parts = cand.content.parts
                 outputs.append("".join(p.text for p in parts if hasattr(p, "text")).strip())
             except AttributeError:
                 continue
         if not outputs and getattr(response, "text", None):
             outputs.append(response.text.strip())
         # De-dup while preserving order
-        seen: set[str] = set()
-        unique = [o for o in outputs if not (o in seen or seen.add(o))]
+        unique = list(dict.fromkeys(outputs))
         return unique[:candidates]
 
     # ── internals ───────────────────────────────────────────────────────────

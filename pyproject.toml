@@ -21,7 +21,7 @@ dependencies = [
 
     # Subtitle / media core
     "ffmpeg-python>=0.2",
-    "yt-dlp>=2025.2",
+    "yt-dlp>=2026.6.9",
     "srt>=3.5",
 
     # Translation
@@ -32,6 +32,8 @@ dependencies = [
     "tenacity>=9.0",
     "python-dotenv>=1.0",
     "httpx>=0.27",
+    "certifi>=2026.10.19",
+    "urllib3>=2.8.0,<3",
     "loguru>=0.7",
 ]
 
@@ -91,6 +93,11 @@ python_version = "3.11"
 strict = true
 ignore_missing_imports = true
 exclude = ["apps/web", "packages", "build"]
+
+[[tool.mypy.overrides]]
+# The legacy SDK publicly re-exports its API without explicit aliases.
+module = "google.generativeai"
+implicit_reexport = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

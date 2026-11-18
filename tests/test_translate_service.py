@@ -139,3 +139,24 @@ def test_context_window_present_in_prompt() -> None:
     assert '"context_before": ["before2", "before1"]' in central_prompt
     assert '"translate": ["central"]' in central_prompt
     assert '"context_after": ["after1", "after2"]' in central_prompt
+
+
+def test_retranslate_one_deduplicates_candidates_in_order() -> None:
+    translator = GeminiTranslator(api_key="fake")
+    candidates = [
+        types.SimpleNamespace(content=types.SimpleNamespace(parts=[types.SimpleNamespace(text=text)]))
+        for text in (" 一つ ", "二つ", "一つ", "三つ")
+    ]
+    _FakeModel.program(types.SimpleNamespace(candidates=candidates))
+
+    result = translator.retranslate_one("hello", source_lang="en", target_lang="ja", candidates=3)
+
+    assert result == ["一つ", "二つ", "三つ"]
+    assert _FakeModel.instances[0].kwargs["generation_config"]["candidate_count"] == 3
+
+
+def test_retranslate_one_falls_back_to_response_text() -> None:
+    translator = GeminiTranslator(api_key="fake")
+    _FakeModel.program(types.SimpleNamespace(candidates=[], text="  翻訳  "))
+
+    assert translator.retranslate_one("hello", source_lang="en", target_lang="ja") == ["翻訳"]

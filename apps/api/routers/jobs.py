@@ -36,10 +36,14 @@ class GlossaryEntryIn(BaseModel):
     note: str | None = None
 
 
+def _default_output_formats() -> list[OutputFormat]:
+    return ["srt"]
+
+
 class TranscribeJobIn(BaseModel):
     source: str = Field(..., description="A URL (yt-dlp) or absolute path to a local file")
     target_lang: str | None = Field(None, description="Two-letter target. None to skip translation")
-    formats: list[OutputFormat] = Field(default_factory=lambda: ["srt"])
+    formats: list[OutputFormat] = Field(default_factory=_default_output_formats)
     output_dir: str = "./generated_subs"
     style_name: str = "Default"
     font_size: int = 48
